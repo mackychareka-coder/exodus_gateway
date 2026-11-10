@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"><title>EXODUS & CO | Corporate Check-In Dashboard</title><script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script></head>
+<body class="bg-gray-900 text-slate-100 font-sans min-h-screen p-4 md:p-6 space-y-6 select-none" data-page-roles="SECURITY_GUARD">
+  <div class="max-w-[1700px] mx-auto flex flex-col md:flex-row items-center justify-between border-b border-amber-600/30 pb-4 gap-4">
+    <div class="flex items-center gap-4 flex-col md:flex-row">
+      <img src="/static/logo.png" alt="EXODUS & CO Logo" class="h-16 w-auto rounded-lg shadow-md border border-amber-500/20">
+      <div><h1 class="text-2xl font-serif tracking-wide text-amber-500 font-bold">EXODUS & CO</h1>
+        <p class="text-xs uppercase tracking-widest text-gray-400">Employee & Visitor Management System</p></div>
+    </div>
+    <div class="flex items-center gap-3 text-sm">
+      <a href="/scanner" class="bg-amber-600 text-white px-5 py-3 rounded-xl font-bold shadow-md">Open Kiosk Terminal</a>
+      <button id="tab-audit" data-roles="SUPER_ADMIN" class="bg-gray-800 text-cyan-300 border border-gray-700 px-5 py-3 rounded-xl font-bold">Audit Log</button>
+      <button data-logout class="bg-gray-800 text-gray-300 border border-gray-700 px-5 py-3 rounded-xl font-bold">Secure Logout</button>
+      <div class="hidden xl:block text-xs text-gray-400 font-mono" id="live-clock"></div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-[1700px] mx-auto">
+    <div class="bg-gray-800 p-6 rounded-xl border border-gray-700/60"><h2 class="text-sm font-bold text-green-400 uppercase tracking-wider">Staff Present In Building</h2><div class="text-6xl font-extrabold mt-2 text-white" id="count-in">0</div></div>
+    <div class="bg-gray-800 p-6 rounded-xl border border-gray-700/60"><h2 class="text-sm font-bold text-cyan-400 uppercase tracking-wider">Active Visitors On-Site</h2><div class="text-6xl font-extrabold mt-2 text-white" id="count-visitors">0</div></div>
+  </div>
+
+  <div id="audit-panel" data-roles="SUPER_ADMIN" class="hidden max-w-[1700px] mx-auto bg-gray-800 p-5 rounded-xl border border-gray-700/60">
+    <div class="flex items-center justify-between border-b border-gray-700 pb-2 mb-3">
+      <h2 class="text-md font-bold text-cyan-400">Audit Log (latest 100)</h2>
+      <select id="audit-outcome" class="bg-gray-900 border border-gray-700 text-xs rounded p-1"><option value="">All outcomes</option><option value="success">success</option><option value="denied">denied</option><option value="error">error</option></select>
+    </div>
+    <div class="overflow-auto max-h-[400px]"><table class="w-full text-left text-xs"><thead><tr class="text-gray-400 uppercase text-[10px]"><th class="py-1">Time</th><th>Action</th><th>Outcome</th><th>Actor</th><th>Target / detail</th></tr></thead><tbody id="audit-rows" class="divide-y divide-gray-700/40"></tbody></table></div>
+  </div>
+
+  <div class="max-w-[1700px] mx-auto grid grid-cols-1 xl:grid-cols-3 gap-6">
+    <div class="bg-gray-800 p-5 rounded-xl border border-gray-700/60"><h2 class="text-md font-bold mb-4 text-slate-200 border-b border-gray-700 pb-2">Staff Access Logs</h2>
+      <div class="overflow-x-auto max-h-[500px]"><table class="w-full text-left text-xs"><thead><tr class="border-b border-gray-700 text-gray-400 uppercase text-[10px]"><th class="py-2">Employee</th><th>Times</th><th class="text-right">State</th></tr></thead><tbody id="attendance-rows" class="divide-y divide-gray-700/40"></tbody></table></div></div>
+    <div class="bg-gray-800 p-5 rounded-xl border border-gray-700/60"><h2 class="text-md font-bold mb-4 text-cyan-400 border-b border-gray-700 pb-2">Today's Guest Registry</h2>
+      <div class="overflow-x-auto max-h-[500px]"><table class="w-full text-left text-xs"><thead><tr class="border-b border-gray-700 text-gray-400 uppercase text-[10px]"><th class="py-2">Visitor Info</th><th>Arrival/Car</th><th class="text-right">Status</th></tr></thead><tbody id="visitor-rows" class="divide-y divide-gray-700/40"></tbody></table></div></div>
+    <div class="bg-gray-800 p-5 rounded-xl border border-gray-700/60"><h2 class="text-md font-bold mb-4 text-amber-500 border-b border-gray-700 pb-2">Staff Parking Spaces</h2>
+      <div class="overflow-x-auto max-h-[500px]"><table class="w-full text-left text-xs"><thead><tr class="border-b border-gray-700 text-gray-400 uppercase text-[10px]"><th class="py-2">Owner</th><th>Vehicle</th><th class="text-right">Parking</th></tr></thead><tbody id="vehicle-rows" class="divide-y divide-gray-700/40"></tbody></table></div></div>
+  </div>
+  <script src="/static/js/api.js" defer></script><script src="/static/js/dashboard.js" defer></script>
+</body></html>

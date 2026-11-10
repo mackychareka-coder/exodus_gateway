@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"><title>{{ error_title }} | EXODUS & CO</title><script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script></head>
+<body class="bg-gray-900 flex items-center justify-center min-h-screen p-4">
+  <div class="max-w-md w-full bg-gray-800 p-8 rounded-2xl border border-gray-700 text-center space-y-4">
+    <img src="/static/logo.png" alt="" class="h-16 mx-auto rounded-lg">
+    <p class="text-5xl font-extrabold text-amber-500">{{ status }}</p>
+    <h1 class="text-lg font-bold text-white">{{ error_title }}</h1>
+    <p class="text-sm text-gray-400">{{ error_message }}</p>
+    <a href="/login" class="inline-block bg-amber-600 text-white font-bold text-sm px-6 py-3 rounded-xl">Back to login</a>
+  </div>
+</body></html>

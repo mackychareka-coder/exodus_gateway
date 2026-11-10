@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"><title>Visitor Departure Gate</title><script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script></head>
+<body class="bg-gray-50 min-h-screen flex flex-col items-center justify-center p-4" data-page-roles="GATE_OPERATOR SECURITY_GUARD">
+  <div class="bg-white p-8 rounded-2xl shadow-md border border-gray-200 max-w-md w-full space-y-6">
+    <div class="flex justify-between items-center border-b pb-4">
+      <h2 class="text-lg font-bold uppercase text-red-600 tracking-wide">Visitor Departure Log</h2><a href="/scanner" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-xl font-bold">← Back Menu</a>
+    </div>
+    <div class="space-y-4">
+      <div><label class="block text-[11px] font-bold uppercase text-gray-400 mb-1">Visitors currently on site</label>
+        <select id="checkout-vis-select" class="w-full p-4 border-2 border-gray-200 rounded-xl text-sm text-gray-900 bg-white h-14 focus:outline-none focus:border-red-500"><option value="">-- Select visitor --</option></select></div>
+      <button id="checkout-btn" class="w-full h-14 bg-red-600 text-white font-bold text-sm rounded-xl shadow-lg">Log Departure</button>
+      <div id="checkout-response-box" class="hidden"></div>
+    </div>
+  </div>
+  <script src="/static/js/api.js" defer></script><script src="/static/js/visitor_out.js" defer></script>
+</body></html>

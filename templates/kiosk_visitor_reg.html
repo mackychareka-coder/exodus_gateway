@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"><title>Visitor Registration</title><script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script></head>
+<body class="bg-gray-50 min-h-screen flex flex-col items-center justify-center p-4" data-page-roles="GATE_OPERATOR SECURITY_GUARD">
+  <div class="bg-white p-8 rounded-2xl shadow-md border border-gray-200 max-w-md w-full space-y-4">
+    <div class="flex justify-between items-center border-b pb-4 mb-2">
+      <h2 class="text-lg font-bold uppercase text-cyan-600 tracking-wide">Visitor Arrival Form</h2><a href="/scanner" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-xl font-bold">← Back Menu</a>
+    </div>
+    <input type="text" id="vis-name" maxlength="100" placeholder="Visitor Full Name" class="w-full p-4 border-2 border-gray-200 rounded-xl text-sm bg-gray-50/50 focus:outline-none focus:border-slate-500">
+    <input type="text" id="vis-contact" maxlength="24" placeholder="Contact Phone (e.g. +263771234567)" class="w-full p-4 border-2 border-gray-200 rounded-xl text-sm bg-gray-50/50 focus:outline-none focus:border-slate-500">
+    <input type="text" id="vis-id" maxlength="20" placeholder="National ID Number" class="w-full p-4 border-2 border-gray-200 rounded-xl text-sm bg-gray-50/50 focus:outline-none focus:border-slate-500">
+    <input type="text" id="vis-purpose" maxlength="255" placeholder="Purpose of Visit..." class="w-full p-4 border-2 border-gray-200 rounded-xl text-sm bg-gray-50/50 focus:outline-none focus:border-slate-500">
+    <div><label class="block text-[11px] font-bold uppercase text-gray-400 mb-1">Visiting (Host)</label>
+      <select id="vis-host" class="w-full p-4 border-2 border-gray-200 rounded-xl text-sm text-gray-900 bg-white h-14 focus:outline-none"></select></div>
+    <div><label class="block text-[11px] font-bold uppercase text-gray-400 mb-1">Arrival Mode</label>
+      <select id="vis-arrival-type" class="w-full p-4 border-2 border-gray-200 rounded-xl text-sm text-gray-900 bg-white h-14 focus:outline-none"><option value="walk_in">Pedestrian Walk-In</option><option value="vehicle">Driving (Capture Car Details)</option></select></div>
+    <div id="vehicle-section" class="hidden bg-cyan-50/40 p-4 rounded-xl border border-cyan-200 space-y-3 border-l-4 border-l-cyan-600">
+      <input type="text" id="vis-veh-reg" maxlength="16" placeholder="Vehicle Registration Plate" class="w-full p-3 border-2 border-gray-200 rounded-lg text-sm bg-white focus:outline-none">
+      <input type="text" id="vis-veh-model" maxlength="50" placeholder="Car Model" class="w-full p-3 border-2 border-gray-200 rounded-lg text-sm bg-white focus:outline-none">
+      <input type="text" id="vis-veh-color" maxlength="30" placeholder="Car Color" class="w-full p-3 border-2 border-gray-200 rounded-lg text-sm bg-white focus:outline-none">
+    </div>
+    <button id="vis-submit" class="w-full h-14 bg-cyan-600 text-white font-bold text-sm rounded-xl shadow-lg">Complete Check-In</button>
+    <div id="vis-response-box" class="hidden"></div>
+    <div id="badge-wrap" class="hidden text-center"><p class="text-[11px] uppercase font-bold text-gray-400 mb-1">Visitor badge</p><img id="badge-qr" alt="Badge QR code" class="mx-auto h-40 w-40"></div>
+  </div>
+  <script src="/static/js/api.js" defer></script><script src="/static/js/visitor_reg.js" defer></script>
+</body></html>
