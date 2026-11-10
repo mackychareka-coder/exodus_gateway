@@ -17,7 +17,7 @@ from extensions import limiter  # noqa: E402
 
 class FakeCursor:
     def __init__(self, fake):
-        self.fake, self._rows, self.rowcount, self.lastrowid = fake, [], 1, 1
+        self.fake, self._rows, self.rowcount, self.lastrowid = fake, [], fake.rowcount, 1
 
     def execute(self, sql, params=None):
         self.fake.executed.append((" ".join(sql.split()), params))
@@ -39,6 +39,7 @@ class FakeDB:
     def __init__(self):
         self.handlers = [("SELECT NOW()", [{"now": datetime(2026, 1, 1, 9, 0)}])]
         self.executed = []
+        self.rowcount = 1
 
     def on(self, needle, rows):
         self.handlers.insert(0, (needle, rows))

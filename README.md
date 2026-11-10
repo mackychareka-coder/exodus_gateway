@@ -94,6 +94,9 @@ All under `/api/v1`. Success: `{"status":"success","message":...,"data":...}`. E
 | GET `/admin/audit-logs?action=&outcome=&limit=&before_id=` | SUPER_ADMIN | |
 | GET/POST `/admin/terminals`, POST `/admin/terminals/<id>/rotate-key`, `/deactivate` | SUPER_ADMIN | key shown once |
 | GET/POST `/admin/users`, POST `/admin/users/<id>/deactivate` | SUPER_ADMIN | |
+| PATCH `/employees/<code>` | guard | set an employee's `email` / `phone` (needed for arrival emails) |
+| GET `/admin/export/access-logs.csv`, `/admin/export/visits.csv` | SUPER_ADMIN | `?period=day\|week\|month&date=YYYY-MM-DD` (week = Mon-Sun) or `?start=&end=` (inclusive, max 366 days) |
+| POST `/admin/users/<id>/role`, `/reset-password`, `/activate`, `/deactivate` | SUPER_ADMIN | cannot target yourself for role/deactivate |
 | GET `/health` | public | |
 
 Visit status: `pre-registered` -> (approve) `approved` -> (check-in) `on-site` -> (check-out) `departed`; or `denied`.
@@ -143,5 +146,27 @@ Most tests use a scripted fake cursor (`tests/conftest.py`), so they need no dat
 * Rate limiting is per-IP; gate hardware behind one NAT shares a bucket (tune `SCAN_LIMIT`). Use Redis storage with several workers.
 * Tailwind is loaded from jsDelivr (allowed in the CSP). For an air-gapped or stricter deployment, vendor it and drop the CDN from the CSP.
 * Audit writes fail open (logged, not raised) so an audit outage cannot lock the gate; monitor the app log.
-* Stale open sessions from forgotten check-outs are not auto-closed; add a nightly job if wanted.
 * The old third-party QR image on the dashboard (it sent a fixed token to api.qrserver.com) was removed.
+
+## Automatic check-out, CSV export, email alerts
+
+**Auto check-out (23:00 by default).** `scheduler.py` runs inside the app every 60 s and closes every open
+employee session and every `on-site` visit whose cutoff has passed. Rule: checked in at/before the cutoff time
+of day -> closed at that day's cutoff (23:00); checked in after it -> closed at the next day's cutoff. It is
+idempotent and catches up after downtime (an app that was off overnight fixes yesterday's rows on next start,
+stamping them 23:00). Closed rows are marked (`check_out_method='AUTO'`, `visits.auto_closed=1`), shown as
+"Auto-closed" on the dashboard, included in exports, and summarised in the audit log (`system.auto_checkout`).
+Configure with `AUTO_CHECKOUT_ENABLED` / `AUTO_CHECKOUT_TIME`. Run once manually: `flask --app "app:create_app()" auto-checkout`.
+Existing v2 databases need `sql/upgrade_v2_1.sql` once. The app must be running for the job to run.
+
+**CSV export.** SUPER_ADMIN only, page at `/admin/exports`. Staff rows are selected by check-in date; visitor rows by
+entry date (registration date if they never arrived). Text cells starting with `= + - @` are prefixed with `'`
+to prevent spreadsheet formula injection, HTML escaping is undone for readability, and a UTF-8 BOM is added for Excel.
+Every export is audited (`admin.export`). Visitor exports contain phone and ID numbers.
+
+**Email to the host on arrival.** Set `NOTIFIER_BACKEND=smtp` plus the `SMTP_*` values. When a visitor is checked
+in (walk-in, or a pre-registered badge scan) the host gets an email with the visitor's name and purpose; with
+`WALKIN_REQUIRES_APPROVAL=true` they get an approval-needed email instead. Hosts need an email address:
+set it when adding the employee or via "Update Employee Email" on the Add Employee page. Emails are sent in a
+background thread; successes and failures are audited (`notify.sent` / `notify.failed`, e.g. "host has no email
+address on file"). Check your setup with `flask --app "app:create_app()" send-test-email you@example.com`.

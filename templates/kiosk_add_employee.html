@@ -19,5 +19,13 @@
     <button id="reg-submit" class="w-full h-14 bg-slate-800 text-white font-bold text-sm rounded-xl shadow-lg">Commit Record Entry</button>
     <div id="reg-response-box" class="hidden"></div>
   </div>
+  <div class="bg-white p-8 rounded-2xl shadow-md border border-gray-200 max-w-md w-full space-y-4 mt-6">
+    <h2 class="text-lg font-bold uppercase text-slate-700 tracking-wide">Update Employee Email</h2>
+    <p class="text-xs text-gray-500">Employees get an email when a visitor arrives for them. Add or correct their address here.</p>
+    <input type="text" id="upd-code" maxlength="32" placeholder="Employee ID (e.g., EXODUS-99)" class="w-full p-4 border-2 border-gray-200 rounded-xl text-sm bg-gray-50/50 focus:outline-none focus:border-slate-500">
+    <input type="text" id="upd-email" maxlength="254" placeholder="Email address" class="w-full p-4 border-2 border-gray-200 rounded-xl text-sm bg-gray-50/50 focus:outline-none focus:border-slate-500">
+    <button id="upd-submit" class="w-full h-14 bg-slate-800 text-white font-bold text-sm rounded-xl shadow-lg">Save Email</button>
+    <div id="upd-response-box" class="hidden"></div>
+  </div>
   <script src="/static/js/api.js" defer></script><script src="/static/js/add_employee.js" defer></script>
 </body></html>

@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS access_logs (
   terminal_id           INT UNSIGNED NULL,
   check_out_terminal_id INT UNSIGNED NULL,
   method                ENUM('QR','NFC','MANUAL') NOT NULL,
-  check_out_method      ENUM('QR','NFC','MANUAL') NULL,
+  check_out_method      ENUM('QR','NFC','MANUAL','AUTO') NULL,
   arrival_type          ENUM('vehicle','walk_in') NOT NULL DEFAULT 'walk_in',
   recorded_by_user_id   INT UNSIGNED NULL,
   -- DB-level anti-passback backstop: at most one open row per employee (NULLs never collide).
@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS visits (
   expected_date         DATE         NULL,
   entry_time            DATETIME     NULL,
   exit_time             DATETIME     NULL,
+  auto_closed           TINYINT(1)   NOT NULL DEFAULT 0,   -- 1 = closed by the automatic end-of-day job
   entry_terminal_id     INT UNSIGNED NULL,
   exit_terminal_id      INT UNSIGNED NULL,
   registered_by_user_id INT UNSIGNED NULL,

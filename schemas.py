@@ -189,3 +189,14 @@ class RoleChange(Strict):
 class PasswordReset(BaseModel):
     model_config = ConfigDict(extra="forbid")
     password: Annotated[str, Field(min_length=12, max_length=128)]
+
+
+class EmployeeUpdate(Strict):
+    email: Optional[Email] = None
+    phone: Optional[Phone] = None
+
+    @model_validator(mode="after")
+    def _any(self):
+        if self.email is None and self.phone is None:
+            raise ValueError("provide email and/or phone")
+        return self

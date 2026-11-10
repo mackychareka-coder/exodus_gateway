@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>EXODUS & CO | Export CSV</title><script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script></head>
+<body class="bg-gray-900 text-slate-100 font-sans min-h-screen p-4 md:p-6 space-y-6" data-page-roles="SUPER_ADMIN">
+  <div class="max-w-3xl mx-auto flex items-center justify-between border-b border-amber-600/30 pb-4">
+    <div><h1 class="text-2xl font-serif text-amber-500 font-bold">Export CSV</h1><p class="text-xs uppercase tracking-widest text-gray-400">Download entries for any period</p></div>
+    <div class="flex gap-3 text-sm">
+      <a href="/dashboard" class="bg-gray-800 border border-gray-700 px-5 py-3 rounded-xl font-bold">Dashboard</a>
+      <button data-logout class="bg-gray-800 border border-gray-700 px-5 py-3 rounded-xl font-bold">Secure Logout</button>
+    </div>
+  </div>
+  <div class="max-w-3xl mx-auto bg-gray-800 p-6 rounded-xl border border-gray-700/60 space-y-5">
+    <div>
+      <p class="text-xs uppercase font-bold text-gray-400 mb-2">What to export</p>
+      <label class="mr-6"><input type="radio" name="kind" value="access-logs" checked> Staff entries (check-in / check-out)</label>
+      <label><input type="radio" name="kind" value="visits"> Visitor entries</label>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div><label class="block text-xs uppercase font-bold text-gray-400 mb-1" for="period">Period</label>
+        <select id="period" class="w-full p-3 bg-gray-900 border border-gray-700 rounded-xl text-sm">
+          <option value="day">Day</option><option value="week">Week (Mon–Sun)</option>
+          <option value="month">Month</option><option value="custom">Custom range</option></select></div>
+      <div id="anchor-wrap"><label class="block text-xs uppercase font-bold text-gray-400 mb-1" for="anchor">Date within the period</label>
+        <input id="anchor" type="date" class="w-full p-3 bg-gray-900 border border-gray-700 rounded-xl text-sm"></div>
+      <div id="start-wrap" class="hidden"><label class="block text-xs uppercase font-bold text-gray-400 mb-1" for="start">From</label>
+        <input id="start" type="date" class="w-full p-3 bg-gray-900 border border-gray-700 rounded-xl text-sm"></div>
+      <div id="end-wrap" class="hidden"><label class="block text-xs uppercase font-bold text-gray-400 mb-1" for="end">To (inclusive)</label>
+        <input id="end" type="date" class="w-full p-3 bg-gray-900 border border-gray-700 rounded-xl text-sm"></div>
+    </div>
+    <p class="text-xs text-gray-400">Rows are included by the date of the check-in (visitors: entry date, or registration date if they never arrived). Visitor exports contain phone and ID numbers; handle the file accordingly.</p>
+    <button id="dl" class="bg-green-600 text-white font-bold text-sm px-6 py-3 rounded-xl">Download CSV</button>
+    <div id="dl-msg" class="hidden"></div>
+  </div>
+  <script src="/static/js/api.js" defer></script><script src="/static/js/admin_export.js" defer></script>
+</body></html>

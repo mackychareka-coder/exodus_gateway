@@ -11,6 +11,7 @@ from cli import register_cli
 from config import load_config
 from errors import ok, register_error_handlers
 from extensions import init_extensions, limiter
+from scheduler import start_scheduler
 
 
 class _JSON(DefaultJSONProvider):
@@ -45,6 +46,7 @@ def create_app(overrides=None):
 
     register_error_handlers(app)
     register_cli(app)
+    start_scheduler(app)
 
     @app.get("/health")
     @limiter.exempt

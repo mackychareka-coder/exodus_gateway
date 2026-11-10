@@ -5,6 +5,13 @@
     $("vehicle-section").classList.toggle("hidden", $("new-emp-has-vehicle").value !== "yes"));
   X.ready.then((s) => {
     if (!s) return;
+    $("upd-submit").addEventListener("click", async () => {
+      const ub = $("upd-response-box"); ub.classList.remove("hidden");
+      const code = $("upd-code").value.trim().toUpperCase();
+      if (!code) { X.message(ub, false, "Enter the employee ID."); return; }
+      const r = await X.api("/api/v1/employees/" + encodeURIComponent(code), { method: "PATCH", body: { email: $("upd-email").value } });
+      X.message(ub, r.ok, r.ok ? "Email saved." : X.errText(r));
+    });
     $("reg-submit").addEventListener("click", async () => {
       const p = { employee_code: $("new-emp-id").value, full_name: $("new-emp-name").value };
       if ($("new-emp-contact").value) p.phone = $("new-emp-contact").value;

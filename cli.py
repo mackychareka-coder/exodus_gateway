@@ -35,3 +35,24 @@ def register_cli(app):
             cur.execute("INSERT INTO terminals (name, gate_location, api_key_hash) VALUES (%s,%s,%s)",
                         (name, gate_location, hash_api_key(key)))
         click.echo(f"Terminal '{name}' created. API key (shown once): {key}")
+
+
+    @app.cli.command("auto-checkout")
+    def auto_checkout_cmd():
+        """Run the end-of-day auto check-out once, right now (it also runs by itself)."""
+        from scheduler import run_auto_checkout
+        emp, vis = run_auto_checkout(app.config["AUTO_CHECKOUT_TIME"])
+        click.echo(f"Closed {emp} employee session(s) and {vis} visitor visit(s).")
+
+    @app.cli.command("send-test-email")
+    @click.argument("to")
+    def send_test_email(to):
+        """Send a sample 'visitor at the gate' email to check your SMTP settings."""
+        from notifier import SmtpNotifier
+        ctx = {"visitor_name": "Test Visitor", "purpose": "Testing the email setup", "host_name": "Test Host",
+               "host_email": to, "badge_code": "TEST123456", "status": "on-site"}
+        try:
+            SmtpNotifier(app.config).send("visitor.arrived", ctx)
+        except Exception as e:  # noqa: BLE001
+            raise click.ClickException(f"{type(e).__name__}: {e}")
+        click.echo(f"Test email sent to {to}.")

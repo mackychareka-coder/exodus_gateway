@@ -54,6 +54,23 @@
     try { body = await r.json(); } catch (e) { /* non-JSON */ }
     return { ok: r.ok, status: r.status, body: body };
   }
+  async function download(path) {
+    if (!accessToken) { try { await refresh(); } catch (e) { toLogin(); throw e; } }
+    const send = () => fetch(path, { credentials: "same-origin", headers: { Authorization: "Bearer " + accessToken } });
+    let r = await send();
+    if (r.status === 401) { try { await refresh(); } catch (e) { toLogin(); throw e; } r = await send(); }
+    if (!r.ok) {
+      let body = {}; try { body = await r.json(); } catch (e) { /* not JSON */ }
+      return { ok: false, status: r.status, body: body };
+    }
+    const m = /filename="([^"]+)"/.exec(r.headers.get("Content-Disposition") || "");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(await r.blob());
+    a.download = m ? m[1] : "export.csv";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    return { ok: true, status: 200, body: {} };
+  }
   function deny(msg) {
     document.body.textContent = "";
     const d = el("div", "p-8 text-center text-red-600 font-bold", msg);
@@ -89,5 +106,5 @@
   }
   const roles = document.body.dataset.pageRoles;
   const ready = roles === undefined ? Promise.resolve(null) : boot(roles ? roles.split(" ") : null);
-  window.Exodus = { api, boot, logout, decode, el, message, errText, ready, refresh };
+  window.Exodus = { api, download, boot, logout, decode, el, message, errText, ready, refresh };
 })();

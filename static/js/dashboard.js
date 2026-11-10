@@ -31,7 +31,7 @@
            E("span", "text-amber-400 font-mono text-xs", l.plates || "N/A")),
         td("py-3", E("span", "text-[10px] text-gray-400 font-mono block", "In " + hm(l.check_in_time) + (open ? "" : " / Out " + hm(l.check_out_time))),
            E("span", "text-[10px] text-gray-500", l.method + (l.gate_location ? " @ " + l.gate_location : ""))),
-        td("py-3 text-right", badge(open ? "On site" : "Left", open ? "bg-green-500/10 text-green-400" : "bg-amber-500/10 text-amber-400")));
+        td("py-3 text-right", badge(open ? "On site" : (l.check_out_method === "AUTO" ? "Auto-closed" : "Left"), open ? "bg-green-500/10 text-green-400" : "bg-amber-500/10 text-amber-400")));
     });
 
     rows($("visitor-rows"), d.visitors, 3, "No guests logged.", (v) => {
@@ -46,7 +46,7 @@
            E("span", "block text-gray-400 text-[11px] italic", v.purpose || ""),
            E("span", "block text-gray-500 text-[11px]", v.host_name ? "Host: " + v.host_name : "")),
         car,
-        td("py-3 text-right", badge(v.status, on ? "bg-cyan-500/20 text-cyan-400" : out ? "bg-gray-800 text-gray-500" : "bg-amber-500/10 text-amber-400"),
+        td("py-3 text-right", badge(v.status + (v.auto_closed ? " (auto)" : ""), on ? "bg-cyan-500/20 text-cyan-400" : out ? "bg-gray-800 text-gray-500" : "bg-amber-500/10 text-amber-400"),
            E("span", "block text-[10px] text-gray-400 mt-1 font-mono", v.entry_time ? "In: " + hm(v.entry_time) : ""),
            E("span", "block text-[10px] text-gray-500 font-mono", v.exit_time ? "Out: " + hm(v.exit_time) : "")));
     });

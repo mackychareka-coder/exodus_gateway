@@ -9,6 +9,13 @@ load_dotenv()
 REQUIRED = ("SECRET_KEY", "JWT_SECRET_KEY", "DB_PASSWORD")
 
 
+def _hhmm(value):
+    import re
+    if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", value):
+        raise RuntimeError("AUTO_CHECKOUT_TIME must look like 23:00 (24-hour HH:MM)")
+    return value + ":00"
+
+
 def _bool(name, default):
     value = os.environ.get(name)
     return default if value is None else value.strip().lower() in ("1", "true", "yes", "on")
@@ -56,6 +63,13 @@ def load_config():
         # --- business rules
         "RESUBMIT_WINDOW_SECONDS": int(e("RESUBMIT_WINDOW_SECONDS", "5")),
         "WALKIN_REQUIRES_APPROVAL": _bool("WALKIN_REQUIRES_APPROVAL", False),
+        # --- automatic check-out of anyone still on site (employees + visitors)
+        "AUTO_CHECKOUT_ENABLED": _bool("AUTO_CHECKOUT_ENABLED", True),
+        "AUTO_CHECKOUT_TIME": _hhmm(e("AUTO_CHECKOUT_TIME", "23:00")),
+        "SCHEDULER_INTERVAL_SECONDS": int(e("SCHEDULER_INTERVAL_SECONDS", "60")),
+        # --- CSV export limits
+        "EXPORT_MAX_ROWS": 100000,
+        "EXPORT_MAX_DAYS": 366,
         # --- notifier: log | smtp | webhook
         "NOTIFIER_BACKEND": e("NOTIFIER_BACKEND", "log"),
         "SMTP_HOST": e("SMTP_HOST", ""),
@@ -63,6 +77,8 @@ def load_config():
         "SMTP_USER": e("SMTP_USER", ""),
         "SMTP_PASSWORD": e("SMTP_PASSWORD", ""),
         "SMTP_STARTTLS": _bool("SMTP_STARTTLS", True),
+        "SMTP_SSL": _bool("SMTP_SSL", False),          # true for port 465
+        "NOTIFY_ASYNC": _bool("NOTIFY_ASYNC", True),   # send emails in the background
         "SMTP_FROM": e("SMTP_FROM", "reception@example.com"),
         "WEBHOOK_URL": e("WEBHOOK_URL", ""),
         "WEBHOOK_SECRET": e("WEBHOOK_SECRET", ""),

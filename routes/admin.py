@@ -1,14 +1,20 @@
 """Dashboard data, audit logs, terminals, users, employee directory."""
+import csv
+import html
+import io
 import json
+from datetime import date, datetime, timedelta
 
 import pymysql
-from flask import Blueprint, g, request
+from flask import Blueprint, Response, current_app, g, request
+from pydantic import TypeAdapter
 
 import audit
 import db
 from auth import generate_api_key, hash_api_key, hash_password, roles_required
 from errors import ApiError, ok
-from schemas import EmployeeCreate, PasswordReset, RoleChange, TerminalCreate, UserCreate, parse_json
+from extensions import limiter
+from schemas import EmployeeCreate, EmployeeCode, EmployeeUpdate, PasswordReset, RoleChange, TerminalCreate, UserCreate, parse_json
 
 bp = Blueprint("admin", __name__, url_prefix="/api/v1")
 GATE_STAFF = ("SECURITY_GUARD", "GATE_OPERATOR")
@@ -47,6 +53,22 @@ def create_employee():
     return ok({"employee_code": b.employee_code}, "Employee profile created.", 201)
 
 
+@bp.patch("/employees/<code>")
+@roles_required("SECURITY_GUARD")
+def update_employee(code):
+    code = TypeAdapter(EmployeeCode).validate_python(code)
+    b = parse_json(EmployeeUpdate)
+    with db.get_cursor() as cur:
+        cur.execute("SELECT id FROM employees WHERE employee_code=%s", (code,))
+        if not cur.fetchone():
+            raise ApiError(404, "EMPLOYEE_NOT_FOUND", "Employee ID not recognized.")
+        cur.execute("UPDATE employees SET email=COALESCE(%s, email), phone=COALESCE(%s, phone) "
+                    "WHERE employee_code=%s", (b.email, b.phone, code))
+    audit.log_event("admin.employee_update", target_type="employee", target_id=code,
+                    detail={"email_set": b.email is not None, "phone_set": b.phone is not None})
+    return ok(message="Employee updated.")
+
+
 # ---- dashboard ------------------------------------------------------------------------------
 @bp.get("/admin/dashboard")
 @roles_required("SECURITY_GUARD")
@@ -57,7 +79,7 @@ def dashboard():
             SELECT a.id, e.employee_code, e.full_name,
                    (SELECT GROUP_CONCAT(v.plate ORDER BY v.id SEPARATOR ', ')
                       FROM vehicles v WHERE v.employee_id = e.id) AS plates,
-                   a.check_in_time, a.check_out_time, a.method, a.arrival_type, t.gate_location
+                   a.check_in_time, a.check_out_time, a.method, a.check_out_method, a.arrival_type, t.gate_location
             FROM access_logs a
             JOIN employees e ON e.id = a.employee_id
             LEFT JOIN terminals t ON t.id = a.terminal_id
@@ -66,7 +88,7 @@ def dashboard():
         logs = cur.fetchall()
         cur.execute("""
             SELECT vt.id, v.full_name, v.national_id, vt.purpose, vt.arrival_type, vt.plate, vt.vehicle_model,
-                   vt.vehicle_color, vt.status, vt.entry_time, vt.exit_time, h.full_name AS host_name
+                   vt.vehicle_color, vt.status, vt.entry_time, vt.exit_time, vt.auto_closed, h.full_name AS host_name
             FROM visits vt JOIN visitors v ON v.id = vt.visitor_id LEFT JOIN employees h ON h.id = vt.host_id
             WHERE vt.created_at >= CURDATE() OR vt.status = 'on-site' OR vt.expected_date = CURDATE()
             ORDER BY vt.id DESC LIMIT 500""")
@@ -255,3 +277,102 @@ def activate_user(uid):
         cur.execute("UPDATE users SET is_active=1 WHERE id=%s", (uid,))
     audit.log_event("admin.user_activate", target_type="user", target_id=uid)
     return ok(message="User activated.")
+
+
+# ---- CSV export (SUPER_ADMIN only) ----------------------------------------------------------
+_ACCESS_SQL = """
+    SELECT a.id, e.employee_code, e.full_name, a.check_in_time, a.check_out_time,
+           TIMESTAMPDIFF(MINUTE, a.check_in_time, a.check_out_time) AS duration_minutes,
+           a.method AS check_in_method, a.check_out_method, a.arrival_type,
+           ti.gate_location AS gate_in, tc.gate_location AS gate_out, u.username AS recorded_by
+    FROM access_logs a
+    JOIN employees e ON e.id = a.employee_id
+    LEFT JOIN terminals ti ON ti.id = a.terminal_id
+    LEFT JOIN terminals tc ON tc.id = a.check_out_terminal_id
+    LEFT JOIN users u ON u.id = a.recorded_by_user_id
+    WHERE a.check_in_time >= %s AND a.check_in_time < %s
+    ORDER BY a.check_in_time, a.id LIMIT %s"""
+
+_VISITS_SQL = """
+    SELECT vt.id, v.full_name AS visitor_name, v.phone, v.national_id,
+           h.full_name AS host_name, h.employee_code AS host_code, vt.purpose, vt.status, vt.source,
+           vt.badge_code, vt.arrival_type, vt.plate, vt.vehicle_model, vt.vehicle_color, vt.expected_date,
+           vt.entry_time, vt.exit_time, TIMESTAMPDIFF(MINUTE, vt.entry_time, vt.exit_time) AS duration_minutes,
+           vt.auto_closed, vt.created_at
+    FROM visits vt JOIN visitors v ON v.id = vt.visitor_id LEFT JOIN employees h ON h.id = vt.host_id
+    WHERE COALESCE(vt.entry_time, vt.created_at) >= %s AND COALESCE(vt.entry_time, vt.created_at) < %s
+    ORDER BY COALESCE(vt.entry_time, vt.created_at), vt.id LIMIT %s"""
+
+
+def _parse_day(text, name):
+    try:
+        return date.fromisoformat(text)
+    except (TypeError, ValueError):
+        raise ApiError(422, "VALIDATION_ERROR", f"{name} must be a date like 2026-11-30.")
+
+
+def export_range():
+    """?period=day|week|month&date=YYYY-MM-DD  (week = Mon-Sun)  or  ?start=YYYY-MM-DD&end=YYYY-MM-DD"""
+    period = request.args.get("period")
+    if period:
+        anchor = _parse_day(request.args["date"], "date") if request.args.get("date") else date.today()
+        if period == "day":
+            start = end = anchor
+        elif period == "week":
+            start = anchor - timedelta(days=anchor.weekday())
+            end = start + timedelta(days=6)
+        elif period == "month":
+            start = anchor.replace(day=1)
+            end = (start + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+        else:
+            raise ApiError(422, "VALIDATION_ERROR", "period must be day, week or month.")
+    else:
+        start, end = _parse_day(request.args.get("start"), "start"), _parse_day(request.args.get("end"), "end")
+    if end < start:
+        raise ApiError(422, "VALIDATION_ERROR", "end must not be before start.")
+    if (end - start).days + 1 > current_app.config["EXPORT_MAX_DAYS"]:
+        raise ApiError(422, "RANGE_TOO_LARGE", f"Choose at most {current_app.config['EXPORT_MAX_DAYS']} days.")
+    return start, end
+
+
+def csv_cell(v):
+    """Unescape stored HTML entities and neutralise spreadsheet formulas (=, +, -, @) in text."""
+    if v is None:
+        return ""
+    if isinstance(v, datetime):
+        return v.isoformat(sep=" ")
+    if isinstance(v, date):
+        return v.isoformat()
+    if isinstance(v, str):
+        v = html.unescape(v)
+        return "'" + v if v[:1] in ("=", "+", "-", "@", "\t", "\r") else v
+    return str(v)
+
+
+@bp.get("/admin/export/<kind>.csv")
+@limiter.limit("10 per minute")
+@roles_required()
+def export_csv(kind):
+    sql = {"access-logs": _ACCESS_SQL, "visits": _VISITS_SQL}.get(kind)
+    if sql is None:
+        raise ApiError(404, "NOT_FOUND", "Unknown export type.")
+    start, end = export_range()
+    cap = current_app.config["EXPORT_MAX_ROWS"]
+    with db.get_cursor() as cur:
+        cur.execute(sql, (start, end + timedelta(days=1), cap + 1))
+        rows = cur.fetchall()
+    if len(rows) > cap:
+        raise ApiError(422, "RANGE_TOO_LARGE", f"More than {cap} rows; choose a shorter range.")
+    out = io.StringIO()
+    out.write("\ufeff")  # BOM so Excel opens UTF-8 names correctly
+    w = csv.writer(out)
+    if rows:
+        w.writerow(rows[0].keys())
+    else:
+        w.writerow(["no rows in this range"])
+    for r in rows:
+        w.writerow([csv_cell(v) for v in r.values()])
+    audit.log_event("admin.export", target_type=kind, detail={"start": str(start), "end": str(end), "rows": len(rows)})
+    name = f"{kind.replace('-', '_')}_{start}_to_{end}.csv"
+    return Response(out.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
