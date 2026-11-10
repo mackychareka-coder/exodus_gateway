@@ -2,13 +2,13 @@
 import json
 
 import pymysql
-from flask import Blueprint, request
+from flask import Blueprint, g, request
 
 import audit
 import db
 from auth import generate_api_key, hash_api_key, hash_password, roles_required
 from errors import ApiError, ok
-from schemas import EmployeeCreate, TerminalCreate, UserCreate, parse_json
+from schemas import EmployeeCreate, PasswordReset, RoleChange, TerminalCreate, UserCreate, parse_json
 
 bp = Blueprint("admin", __name__, url_prefix="/api/v1")
 GATE_STAFF = ("SECURITY_GUARD", "GATE_OPERATOR")
@@ -164,7 +164,9 @@ def deactivate_terminal(tid):
 @roles_required()
 def list_users():
     with db.get_cursor() as cur:
-        cur.execute("SELECT id, username, role, employee_id, is_active, last_login_at FROM users ORDER BY id")
+        cur.execute("""SELECT u.id, u.username, u.role, u.is_active, u.last_login_at,
+                              e.employee_code, e.full_name AS employee_name
+                       FROM users u LEFT JOIN employees e ON e.id = u.employee_id ORDER BY u.id""")
         return ok({"users": cur.fetchall()})
 
 
@@ -192,12 +194,64 @@ def create_user():
     return ok({"id": uid, "username": b.username, "role": b.role}, "User created.", 201)
 
 
+def _no_self(uid, what):
+    if uid == g.user_id:
+        raise ApiError(409, "SELF_CHANGE", f"You cannot {what} your own account.")
+
+
+def _user_exists(cur, uid):
+    cur.execute("SELECT id FROM users WHERE id=%s", (uid,))
+    if not cur.fetchone():
+        raise ApiError(404, "USER_NOT_FOUND", "User not found.")
+
+
+@bp.post("/admin/users/<int:uid>/role")
+@roles_required()
+def change_role(uid):
+    b = parse_json(RoleChange)
+    _no_self(uid, "change the role of")
+    with db.get_cursor() as cur:
+        _user_exists(cur, uid)
+        emp_id = None
+        if b.employee_code:
+            cur.execute("SELECT id FROM employees WHERE employee_code=%s", (b.employee_code,))
+            row = cur.fetchone()
+            if not row:
+                raise ApiError(404, "EMPLOYEE_NOT_FOUND", "Employee ID not recognized.")
+            emp_id = row["id"]
+        cur.execute("UPDATE users SET role=%s, employee_id=COALESCE(%s, employee_id) WHERE id=%s",
+                    (b.role, emp_id, uid))
+    audit.log_event("admin.user_role_change", target_type="user", target_id=uid, detail={"role": b.role})
+    return ok(message="Role updated. It takes effect within 15 minutes or at the user's next sign-in.")
+
+
+@bp.post("/admin/users/<int:uid>/reset-password")
+@roles_required()
+def reset_password(uid):
+    b = parse_json(PasswordReset)
+    with db.get_cursor() as cur:
+        _user_exists(cur, uid)
+        cur.execute("UPDATE users SET password_hash=%s WHERE id=%s", (hash_password(b.password), uid))
+    audit.log_event("admin.user_password_reset", target_type="user", target_id=uid)
+    return ok(message="Password reset.")
+
+
 @bp.post("/admin/users/<int:uid>/deactivate")
 @roles_required()
 def deactivate_user(uid):
+    _no_self(uid, "deactivate")
     with db.get_cursor() as cur:
+        _user_exists(cur, uid)
         cur.execute("UPDATE users SET is_active=0 WHERE id=%s", (uid,))
-        if cur.rowcount == 0:
-            raise ApiError(404, "USER_NOT_FOUND", "User not found.")
     audit.log_event("admin.user_deactivate", target_type="user", target_id=uid)
     return ok(message="User deactivated.")
+
+
+@bp.post("/admin/users/<int:uid>/activate")
+@roles_required()
+def activate_user(uid):
+    with db.get_cursor() as cur:
+        _user_exists(cur, uid)
+        cur.execute("UPDATE users SET is_active=1 WHERE id=%s", (uid,))
+    audit.log_event("admin.user_activate", target_type="user", target_id=uid)
+    return ok(message="User activated.")

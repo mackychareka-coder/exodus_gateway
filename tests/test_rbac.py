@@ -14,6 +14,10 @@ SCAN = {"employee_code": "EXODUS-1"}
     ("SECURITY_GUARD", "get", "/api/v1/admin/audit-logs", None),
     ("SECURITY_GUARD", "post", "/api/v1/admin/terminals", {"name": "T1", "gate_location": "Main"}),
     ("SECURITY_GUARD", "get", "/api/v1/admin/users", None),
+    ("SECURITY_GUARD", "post", "/api/v1/admin/users", {}),
+    ("SECURITY_GUARD", "post", "/api/v1/admin/users/2/role", {"role": "SUPER_ADMIN"}),
+    ("SECURITY_GUARD", "post", "/api/v1/admin/users/2/reset-password", {}),
+    ("GATE_OPERATOR", "post", "/api/v1/admin/users/2/deactivate", None),
     ("GATE_OPERATOR", "post", "/api/v1/employees", {"employee_code": "X-1", "full_name": "Test User"}),
     ("SECURITY_GUARD", "post", "/api/v1/visitors/pre-register", {}),
     ("EMPLOYEE", "post", "/api/v1/visitors/walk-in", {}),
@@ -50,3 +54,16 @@ def test_hardware_cannot_record_manual_entry(client, fake_db):
     r = client.post("/api/v1/access/employee/check-in", headers={"X-Gate-API-Key": "gk_t"},
                     json={"employee_code": "EXODUS-1", "method": "MANUAL"})
     assert r.status_code == 403 and r.json["code"] == "MANUAL_NOT_ALLOWED"
+
+
+def test_admin_cannot_demote_or_deactivate_self(client, token_for, fake_db):
+    h = bearer(token_for("SUPER_ADMIN", user_id=1))
+    assert client.post("/api/v1/admin/users/1/role", headers=h, json={"role": "SECURITY_GUARD"}).json["code"] == "SELF_CHANGE"
+    assert client.post("/api/v1/admin/users/1/deactivate", headers=h).status_code == 409
+
+
+def test_admin_can_change_role_of_another_user(client, token_for, fake_db):
+    fake_db.on("SELECT id FROM users WHERE id", [{"id": 2}])
+    h = bearer(token_for("SUPER_ADMIN", user_id=1))
+    r = client.post("/api/v1/admin/users/2/role", headers=h, json={"role": "GATE_OPERATOR"})
+    assert r.status_code == 200 and fake_db.ran("UPDATE users SET role")

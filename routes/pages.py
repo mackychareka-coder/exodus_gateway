@@ -44,3 +44,8 @@ def visitor_checkout():
 @bp.get("/scanner/add-employee")
 def add_employee():
     return render_template("kiosk_add_employee.html")
+
+
+@bp.get("/admin/users")
+def admin_users():
+    return render_template("admin_users.html")

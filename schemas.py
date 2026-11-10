@@ -154,7 +154,8 @@ class TerminalCreate(Strict):
     gate_location: LabelText
 
 
-class UserCreate(Strict):
+class UserCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")  # no whitespace stripping: passwords are used verbatim
     username: Username
     password: Annotated[str, Field(min_length=12, max_length=128)]
     role: Literal["SUPER_ADMIN", "SECURITY_GUARD", "GATE_OPERATOR", "EMPLOYEE"]
@@ -172,3 +173,19 @@ def parse_json(model):
     if not isinstance(data, dict):
         raise ApiError(400, "INVALID_JSON", "Request body must be a JSON object.")
     return model.model_validate(data)
+
+
+class RoleChange(Strict):
+    role: Literal["SUPER_ADMIN", "SECURITY_GUARD", "GATE_OPERATOR", "EMPLOYEE"]
+    employee_code: Optional[EmployeeCode] = None
+
+    @model_validator(mode="after")
+    def _emp(self):
+        if self.role == "EMPLOYEE" and not self.employee_code:
+            raise ValueError("employee_code is required for the EMPLOYEE role")
+        return self
+
+
+class PasswordReset(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    password: Annotated[str, Field(min_length=12, max_length=128)]
