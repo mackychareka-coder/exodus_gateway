@@ -102,6 +102,16 @@ class EmployeeScan(Strict):
     employee_code: EmployeeCode
     arrival_type: Optional[Literal["vehicle", "walk_in"]] = None
     method: Optional[Literal["QR", "NFC", "MANUAL"]] = None
+    vehicle_id: Optional[int] = Field(default=None, ge=1)  # one of the employee's registered vehicles
+    vehicle: Optional[VehicleIn] = None                    # a vehicle not yet on file: saved to their profile
+
+    @model_validator(mode="after")
+    def _vehicle(self):
+        if self.vehicle is not None and self.vehicle_id is not None:
+            raise ValueError("send either vehicle_id or vehicle, not both")
+        if self.arrival_type == "walk_in" and (self.vehicle is not None or self.vehicle_id is not None):
+            raise ValueError("vehicle details cannot be given for an on-foot arrival")
+        return self
 
 
 class VisitorBase(Strict):

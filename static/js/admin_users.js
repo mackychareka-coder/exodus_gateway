@@ -11,8 +11,7 @@
   }
   async function act(path, body, okMsg) {
     const r = await X.api(path, { method: "POST", body: body });
-    const box = $("list-msg"); box.classList.remove("hidden");
-    X.message(box, r.ok, r.ok ? (okMsg || r.body.message) : X.errText(r));
+    X.toast(r.ok, r.ok ? (okMsg || r.body.message) : X.errText(r));
     if (r.ok) load();
     return r;
   }
@@ -26,37 +25,44 @@
       if (sel.value === u.role) return;
       const body = { role: sel.value };
       if (sel.value === "EMPLOYEE") {
-        const code = prompt("Employee ID to link this account to (e.g. EXODUS-12):");
+        const code = await X.prompt("Employee ID to link this account to (e.g. EXODUS-12):", { okLabel: "Link" });
         if (!code) return;
         body.employee_code = code;
       }
-      act("/api/v1/admin/users/" + u.id + "/role", body);
+      act("/api/v1/admin/users/" + u.id + "/role", body, "Role updated for " + u.username + ".");
     });
     apply.disabled = self;
     const tr = document.createElement("tr");
     const cell = (cls, ...kids) => { const c = document.createElement("td"); c.className = cls; kids.forEach((k) => c.append(k)); return c; };
-    const actions = cell("py-2 text-right space-x-2",
-      btn("Reset password", "bg-gray-700 text-white", async () => {
-        const pw = prompt("New password for " + u.username + " (12+ characters):");
-        if (pw) act("/api/v1/admin/users/" + u.id + "/reset-password", { password: pw }, "Password reset.");
-      }),
-      u.is_active
-        ? btn("Deactivate", "bg-red-700 text-white", () => { if (confirm("Deactivate " + u.username + "?")) act("/api/v1/admin/users/" + u.id + "/deactivate"); })
-        : btn("Activate", "bg-green-700 text-white", () => act("/api/v1/admin/users/" + u.id + "/activate")));
-    actions.querySelectorAll("button").forEach((b, i) => { if (self && i === 1) b.disabled = true; });
+    const reset = btn("Reset password", "bg-gray-700 text-white", async () => {
+      const pw = await X.prompt("Set a new password for " + u.username + " (at least 12 characters):", { input: "password", okLabel: "Next" });
+      if (!pw) return;
+      const again = await X.prompt("Type the new password again to confirm:", { input: "password", okLabel: "Reset password" });
+      if (again === null) return;
+      if (again !== pw) { X.toast(false, "The two passwords did not match. Nothing was changed."); return; }
+      act("/api/v1/admin/users/" + u.id + "/reset-password", { password: pw }, "Password reset for " + u.username + ".");
+    });
+    const toggle = u.is_active
+      ? btn("Deactivate", "bg-red-700 text-white", async () => {
+          if (await X.confirm("Deactivate " + u.username + "? They will no longer be able to sign in.", { danger: true, okLabel: "Deactivate" }))
+            act("/api/v1/admin/users/" + u.id + "/deactivate", undefined, u.username + " deactivated.");
+        })
+      : btn("Activate", "bg-green-700 text-white", () => act("/api/v1/admin/users/" + u.id + "/activate", undefined, u.username + " activated."));
+    toggle.disabled = self && u.is_active;
     tr.append(
       cell("py-2 font-medium", E("span", "", u.username + (self ? " (you)" : ""))),
       cell("py-2", sel, document.createTextNode(" "), apply),
       cell("py-2 text-gray-300", E("span", "", u.employee_code ? u.employee_code + " – " + (u.employee_name || "") : "-")),
       cell("py-2", E("span", "text-xs font-bold " + (u.is_active ? "text-green-400" : "text-red-400"), u.is_active ? "Active" : "Disabled")),
       cell("py-2 text-xs text-gray-400", E("span", "", u.last_login_at ? new Date(u.last_login_at).toLocaleString() : "never")),
-      actions);
+      cell("py-2 text-right space-x-2", reset, toggle));
     return tr;
   }
   async function load() {
     const r = await X.api("/api/v1/admin/users");
     const body = $("user-rows"); body.replaceChildren();
-    if (r.ok) r.body.data.users.forEach((u) => body.append(row(u)));
+    if (!r.ok) { X.toast(false, X.errText(r)); return; }
+    r.body.data.users.forEach((u) => body.append(row(u)));
   }
   X.ready.then(async (s) => {
     if (!s) return;
@@ -71,8 +77,7 @@
       const p = { username: $("nu-username").value, password: $("nu-password").value, role: $("nu-role").value };
       if (p.role === "EMPLOYEE") p.employee_code = $("nu-employee").value || undefined;
       const r = await X.api("/api/v1/admin/users", { method: "POST", body: p });
-      const box = $("nu-msg"); box.classList.remove("hidden");
-      X.message(box, r.ok, r.ok ? "Account '" + r.body.data.username + "' created as " + r.body.data.role + "." : X.errText(r));
+      X.toast(r.ok, r.ok ? "Account '" + r.body.data.username + "' created as " + r.body.data.role + "." : X.errText(r));
       if (r.ok) { $("nu-username").value = ""; $("nu-password").value = ""; load(); }
     });
     load();

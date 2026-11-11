@@ -188,3 +188,12 @@ even the ID), manage vehicles, deactivate/activate, and delete.
   "Arrived by" switch, pre-set to "By vehicle" only when the employee has a registered car. Parking status is derived
   from the open session: an employee who walks in never marks their car as parked, so it stays "Away". API/hardware
   callers should send `arrival_type`; if omitted it is inferred (vehicle when the employee has one).
+* **Capturing unregistered vehicles.** For a by-vehicle check-in the kiosk lets staff pick one of the employee's
+  vehicles or enter a new one (plate required, model/colour optional). A new vehicle is saved to the employee's profile
+  and linked to that entry (`access_logs.vehicle_id`); a plate already on file is reused. If an employee has no vehicle
+  on file and the arrival is "by vehicle", the API answers `422 VEHICLE_DETAILS_REQUIRED`. API payload:
+  `{"employee_code": "...", "arrival_type": "vehicle", "vehicle": {"plate": "ABC 123", "model": "...", "color": "..."}}`
+  or `{"vehicle_id": 7}`. Parking status per car uses `vehicle_id` (older rows without it count every car).
+  Existing databases need `sql/upgrade_v2_2.sql` once.
+* **Dialogs.** Admin pages use in-page dialogs and pop-up messages instead of the browser's `confirm()`/`prompt()`,
+  which some browsers and embedded viewers (e.g. VS Code's Simple Browser) silently block.

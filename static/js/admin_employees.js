@@ -3,7 +3,7 @@
   const X = window.Exodus, E = X.el, $ = (id) => document.getElementById(id);
   let editing = null, timer = null;
 
-  function flash(ok, text) { const b = $("msg"); b.classList.remove("hidden"); X.message(b, ok, text); }
+  function flash(ok, text) { X.toast(ok, text); }
   function btn(label, cls, fn) { const b = E("button", "px-3 py-1.5 rounded-lg text-xs font-bold " + cls, label); b.addEventListener("click", fn); return b; }
   const val = (id) => $(id).value.trim();
   const orNull = (v) => (v === "" ? null : v);
@@ -28,7 +28,7 @@
     const actions = cell("py-2 text-right space-x-2",
       btn("Edit", "bg-cyan-700 text-white", () => openEdit(e.employee_code)),
       e.is_active
-        ? btn("Deactivate", "bg-amber-700 text-white", () => { if (confirm("Deactivate " + e.employee_code + "? They can no longer check in, but their history is kept.")) patch(e.employee_code, { is_active: false }, "Employee deactivated."); })
+        ? btn("Deactivate", "bg-amber-700 text-white", async () => { if (await X.confirm("Deactivate " + e.employee_code + "? They can no longer check in, but their history is kept.", { okLabel: "Deactivate" })) patch(e.employee_code, { is_active: false }, "Employee deactivated."); })
         : btn("Activate", "bg-green-700 text-white", () => patch(e.employee_code, { is_active: true }, "Employee activated.")),
       btn("Delete", "bg-red-700 text-white", () => remove(e)));
     tr.append(
@@ -49,15 +49,17 @@
     return null;
   }
   async function remove(e) {
-    if (!confirm("Delete " + e.employee_code + " (" + X.decode(e.full_name) + ")? This cannot be undone.")) return;
+    const name = X.decode(e.full_name);
+    if (!(await X.confirm("Delete " + e.employee_code + " (" + name + ")? This cannot be undone.", { danger: true, okLabel: "Delete" }))) return;
     const url = "/api/v1/admin/employees/" + encodeURIComponent(e.employee_code);
     let r = await X.api(url, { method: "DELETE", body: {} });
     if (!r.ok && r.body.code === "HAS_HISTORY") {
-      const typed = prompt(r.body.message + "\n\nTo DELETE THEM AND ALL THEIR ACCESS HISTORY, type their Employee ID (" + e.employee_code + ") below. To keep the history, cancel and use Deactivate instead.");
+      const typed = await X.prompt(r.body.message + "\n\nTo DELETE THEM AND ALL THEIR ACCESS HISTORY, type their Employee ID (" + e.employee_code +
+        ") below. To keep the history, cancel and use Deactivate instead.", { danger: true, okLabel: "Delete everything" });
       if (!typed) return;
       r = await X.api(url, { method: "DELETE", body: { purge: true, confirm_code: typed } });
     }
-    flash(r.ok, r.ok ? "Employee deleted." : X.errText(r));
+    flash(r.ok, r.ok ? e.employee_code + " deleted." : X.errText(r));
     if (r.ok) { if (editing === e.employee_code) $("edit-panel").classList.add("hidden"); load(); }
   }
   async function openEdit(code) {
@@ -74,7 +76,7 @@
       const line = E("div", "flex items-center justify-between bg-gray-900 rounded-lg px-3 py-2 text-sm");
       line.append(E("span", "font-mono text-amber-500", v.plate + (v.model || v.color ? "  –  " + [v.color, v.model].filter(Boolean).map(X.decode).join(" ") : "")),
         btn("Remove", "bg-red-700 text-white", async () => {
-          if (!confirm("Remove vehicle " + v.plate + "?")) return;
+          if (!(await X.confirm("Remove vehicle " + v.plate + "?", { danger: true, okLabel: "Remove" }))) return;
           const d = await X.api("/api/v1/admin/vehicles/" + v.id, { method: "DELETE" });
           flash(d.ok, d.ok ? "Vehicle removed." : X.errText(d));
           if (d.ok) { openEdit(editing); load(); }

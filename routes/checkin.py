@@ -50,6 +50,32 @@ def _now(cur):
     return cur.fetchone()["now"]
 
 
+def _resolve_vehicle(cur, emp_id, body, owned):
+    """Return (vehicle_id, plate, newly_saved) for a by-vehicle arrival, saving unknown vehicles."""
+    if body.vehicle_id is not None:
+        match = next((v for v in owned if v["id"] == body.vehicle_id), None)
+        if not match:
+            raise ApiError(422, "INVALID_VEHICLE", "That vehicle is not registered to this employee.")
+        return match["id"], match["plate"], False
+    if body.vehicle is not None:
+        v = body.vehicle
+        for o in owned:
+            if o["plate"] == v.plate:  # already on file: just refresh model/colour if given
+                if v.model or v.color:
+                    cur.execute("UPDATE vehicles SET model=COALESCE(%s, model), color=COALESCE(%s, color) WHERE id=%s",
+                                (v.model, v.color, o["id"]))
+                return o["id"], o["plate"], False
+        cur.execute("INSERT INTO vehicles (employee_id, plate, model, color) VALUES (%s,%s,%s,%s)",
+                    (emp_id, v.plate, v.model, v.color))
+        return cur.lastrowid, v.plate, True
+    if len(owned) == 1:
+        return owned[0]["id"], owned[0]["plate"], False
+    if not owned:
+        raise ApiError(422, "VEHICLE_DETAILS_REQUIRED", "No vehicle is on file for this employee. Enter the number "
+                       "plate (and model/colour) of the vehicle they arrived in.")
+    return None, None, False  # several vehicles on file and none chosen
+
+
 def _check_in(body, method):
     try:
         with db.get_cursor() as cur:
@@ -57,17 +83,23 @@ def _check_in(body, method):
             last = _last_log(cur, emp["id"])
             if last and last["check_out_time"] is None:
                 raise ApiError(409, "ALREADY_CHECKED_IN", "Already checked in. Check out before entering again.")
-            arrival = body.arrival_type
-            if arrival is None:
-                cur.execute("SELECT 1 AS hit FROM vehicles WHERE employee_id=%s LIMIT 1", (emp["id"],))
-                arrival = "vehicle" if cur.fetchone() else "walk_in"
+            cur.execute("SELECT id, plate FROM vehicles WHERE employee_id=%s ORDER BY id", (emp["id"],))
+            owned = cur.fetchall()
+            arrival = "vehicle" if (body.vehicle or body.vehicle_id) else body.arrival_type
+            if arrival is None:  # caller did not say: a registered car implies they drove
+                arrival = "vehicle" if owned else "walk_in"
+            vehicle_id = plate = None
+            saved = False
+            if arrival == "vehicle":
+                vehicle_id, plate, saved = _resolve_vehicle(cur, emp["id"], body, owned)
             cur.execute(
-                """INSERT INTO access_logs (employee_id, check_in_time, terminal_id, method, arrival_type,
+                """INSERT INTO access_logs (employee_id, check_in_time, terminal_id, method, arrival_type, vehicle_id,
                                             recorded_by_user_id)
-                   VALUES (%s, NOW(), %s, %s, %s, %s)""",
-                (emp["id"], g.terminal_id, method, arrival, g.user_id))
+                   VALUES (%s, NOW(), %s, %s, %s, %s, %s)""",
+                (emp["id"], g.terminal_id, method, arrival, vehicle_id, g.user_id))
             return {"employee_code": body.employee_code, "name": emp["full_name"], "action": "check_in",
-                    "method": method, "arrival_type": arrival, "time": _now(cur)}
+                    "method": method, "arrival_type": arrival, "vehicle": plate, "vehicle_saved": saved,
+                    "time": _now(cur)}
     except pymysql.err.IntegrityError:  # DB-level one-open-row backstop fired
         raise ApiError(409, "ALREADY_CHECKED_IN", "Already checked in. Check out before entering again.")
 
@@ -95,7 +127,8 @@ def _handle(action, fn, message):
                         detail={"code": e.code, "method": method})
         raise
     audit.log_event(action, "success", target_type="employee", target_id=body.employee_code,
-                    detail={"method": method, "gate": g.gate_location})
+                    detail={"method": method, "gate": g.gate_location, "arrival": result.get("arrival_type"),
+                            "new_vehicle": result.get("vehicle") if result.get("vehicle_saved") else None})
     return ok(result, message, 201 if action == "access.check_in" else 200)
 
 

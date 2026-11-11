@@ -71,6 +71,44 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     return { ok: true, status: 200, body: {} };
   }
+  function modal(message, opts) {
+    return new Promise((resolve) => {
+      const overlay = el("div", "fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4");
+      const box = el("div", "bg-gray-800 text-slate-100 border border-gray-600 rounded-2xl p-6 w-full max-w-md space-y-4 shadow-2xl");
+      box.setAttribute("role", "dialog"); box.setAttribute("aria-modal", "true");
+      box.append(el("p", "whitespace-pre-line text-sm", message));
+      let input = null;
+      if (opts.input) {
+        input = document.createElement("input");
+        input.type = opts.input; input.placeholder = opts.placeholder || ""; input.maxLength = 128; input.autocomplete = "off";
+        input.className = "w-full p-3 bg-gray-900 border border-gray-600 rounded-xl text-sm text-white";
+        box.append(input);
+      }
+      const row = el("div", "flex justify-end gap-3");
+      const cancel = el("button", "px-4 py-2 rounded-xl text-sm font-bold bg-gray-700 text-white", "Cancel");
+      const ok = el("button", "px-4 py-2 rounded-xl text-sm font-bold text-white " + (opts.danger ? "bg-red-600" : "bg-amber-600"), opts.okLabel || "OK");
+      row.append(cancel, ok); box.append(row); overlay.append(box); document.body.append(overlay);
+      function done(v) { document.removeEventListener("keydown", onKey); overlay.remove(); resolve(v); }
+      function onKey(ev) {
+        if (ev.key === "Escape") done(null);
+        else if (ev.key === "Enter" && ev.target.tagName !== "BUTTON") ok.click();
+      }
+      cancel.addEventListener("click", () => done(null));
+      ok.addEventListener("click", () => done(input ? input.value : true));
+      document.addEventListener("keydown", onKey);
+      (input || ok).focus();
+    });
+  }
+  const confirmDialog = (m, o) => modal(m, Object.assign({}, o)).then((v) => v === true);
+  const promptDialog = (m, o) => modal(m, Object.assign({ input: "text" }, o)).then((v) => (v === null || v === true ? null : v));
+  function toast(ok, text) {
+    let c = document.getElementById("toasts");
+    if (!c) { c = el("div", "fixed top-4 right-4 z-50 space-y-2 w-80 max-w-[90vw]"); c.id = "toasts"; document.body.appendChild(c); }
+    const t = el("div", "p-3 rounded-xl text-sm font-bold shadow-lg text-white " + (ok ? "bg-emerald-600" : "bg-red-600"), text);
+    t.setAttribute("role", "status");
+    c.appendChild(t);
+    setTimeout(() => t.remove(), ok ? 4000 : 10000);
+  }
   function deny(msg) {
     document.body.textContent = "";
     const d = el("div", "p-8 text-center text-red-600 font-bold", msg);
@@ -106,5 +144,5 @@
   }
   const roles = document.body.dataset.pageRoles;
   const ready = roles === undefined ? Promise.resolve(null) : boot(roles ? roles.split(" ") : null);
-  window.Exodus = { api, download, boot, logout, decode, el, message, errText, ready, refresh };
+  window.Exodus = { confirm: confirmDialog, prompt: promptDialog, toast, api, download, boot, logout, decode, el, message, errText, ready, refresh };
 })();

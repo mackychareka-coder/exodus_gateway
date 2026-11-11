@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS access_logs (
   method                ENUM('QR','NFC','MANUAL') NOT NULL,
   check_out_method      ENUM('QR','NFC','MANUAL','AUTO') NULL,
   arrival_type          ENUM('vehicle','walk_in') NOT NULL DEFAULT 'walk_in',
+  vehicle_id            INT UNSIGNED NULL,                   -- the car used for a 'vehicle' arrival
   recorded_by_user_id   INT UNSIGNED NULL,
   -- DB-level anti-passback backstop: at most one open row per employee (NULLs never collide).
   open_flag             TINYINT GENERATED ALWAYS AS (IF(check_out_time IS NULL, 1, NULL)) STORED,
@@ -68,7 +69,8 @@ CREATE TABLE IF NOT EXISTS access_logs (
   CONSTRAINT fk_access_employee FOREIGN KEY (employee_id) REFERENCES employees(id),
   CONSTRAINT fk_access_term_in  FOREIGN KEY (terminal_id) REFERENCES terminals(id) ON DELETE SET NULL,
   CONSTRAINT fk_access_term_out FOREIGN KEY (check_out_terminal_id) REFERENCES terminals(id) ON DELETE SET NULL,
-  CONSTRAINT fk_access_user     FOREIGN KEY (recorded_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+  CONSTRAINT fk_access_user     FOREIGN KEY (recorded_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_access_vehicle  FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS visitors (

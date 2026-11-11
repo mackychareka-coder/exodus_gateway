@@ -171,9 +171,11 @@ def test_employee_admin_endpoints_are_super_admin_only(client, token_for):
 
 
 def test_search_by_employee_id_or_name(client, token_for, fake_db):
-    fake_db.on("FROM employees e WHERE", [{"employee_code": "EXODUS-5", "full_name": "Jane Doe", "has_vehicle": 1, "plates": "ACX 1"}])
+    fake_db.on("FROM employees e WHERE", [{"employee_code": "EXODUS-5", "full_name": "Jane Doe"}])
+    fake_db.on("FROM vehicles v JOIN employees e", [{"id": 1, "employee_code": "EXODUS-5", "plate": "ACX 1", "model": None, "color": None}])
     r = client.get("/api/v1/employees?q=exodus-5", headers=bearer(token_for("GATE_OPERATOR")))
-    assert r.status_code == 200 and r.json["data"]["employees"][0]["has_vehicle"] is True
+    emp = r.json["data"]["employees"][0]
+    assert r.status_code == 200 and emp["has_vehicle"] is True and emp["vehicles"][0]["id"] == 1 and emp["plates"] == "ACX 1"
     sql, params = fake_db.ran("FROM employees e WHERE")[-1]
     assert "e.employee_code LIKE" in sql and "e.full_name LIKE" in sql and params == ("%exodus-5%", "%exodus-5%")
 
@@ -188,7 +190,7 @@ def test_admin_search_escapes_wildcards(client, token_for, fake_db):
 def test_walk_in_arrival_is_recorded_even_when_employee_has_a_car(client, token_for, fake_db):
     fake_db.on("FROM employees WHERE employee_code", [EMP])
     fake_db.on("FROM access_logs WHERE employee_id", [])
-    fake_db.on("FROM vehicles WHERE employee_id", [{"hit": 1}])   # has a registered car
+    fake_db.on("FROM vehicles WHERE employee_id", [{"id": 7, "plate": "ACX 1"}])   # has a registered car
     r = client.post("/api/v1/access/employee/check-in", headers=bearer(token_for("GATE_OPERATOR")),
                     json={"employee_code": "EXODUS-5", "arrival_type": "walk_in"})
     assert r.status_code == 201 and r.json["data"]["arrival_type"] == "walk_in"
@@ -198,10 +200,10 @@ def test_walk_in_arrival_is_recorded_even_when_employee_has_a_car(client, token_
 def test_unspecified_arrival_still_infers_vehicle(client, token_for, fake_db):
     fake_db.on("FROM employees WHERE employee_code", [EMP])
     fake_db.on("FROM access_logs WHERE employee_id", [])
-    fake_db.on("FROM vehicles WHERE employee_id", [{"hit": 1}])
+    fake_db.on("FROM vehicles WHERE employee_id", [{"id": 7, "plate": "ACX 1"}])
     r = client.post("/api/v1/access/employee/check-in", headers=bearer(token_for("GATE_OPERATOR")),
                     json={"employee_code": "EXODUS-5"})
-    assert r.json["data"]["arrival_type"] == "vehicle"
+    assert r.json["data"]["arrival_type"] == "vehicle" and r.json["data"]["vehicle"] == "ACX 1"
 
 
 def test_inactive_employee_cannot_check_in_but_can_check_out(client, token_for, fake_db):
@@ -262,3 +264,78 @@ def test_admin_can_add_and_remove_vehicle(client, token_for, fake_db):
     assert fake_db.ran("INSERT INTO vehicles")[-1][1][1] == "ACX 1234"
     fake_db.on("FROM vehicles WHERE id", [{"plate": "ACX 1234"}])
     assert client.delete("/api/v1/admin/vehicles/3", headers=h).status_code == 200
+
+
+# ---- capturing a vehicle that is not on file --------------------------------------------------
+def _scan(client, token_for, fake_db, body, owned=()):
+    fake_db.on("FROM employees WHERE employee_code", [EMP])
+    fake_db.on("FROM access_logs WHERE employee_id", [])
+    fake_db.on("FROM vehicles WHERE employee_id", list(owned))
+    return client.post("/api/v1/access/employee/check-in", headers=bearer(token_for("GATE_OPERATOR")),
+                       json={"employee_code": "EXODUS-5", **body})
+
+
+def test_vehicle_arrival_without_any_vehicle_on_file_demands_details(client, token_for, fake_db):
+    r = _scan(client, token_for, fake_db, {"arrival_type": "vehicle"})
+    assert r.status_code == 422 and r.json["code"] == "VEHICLE_DETAILS_REQUIRED"
+    assert not fake_db.ran("INSERT INTO access_logs")
+
+
+def test_unregistered_vehicle_is_saved_to_profile_and_linked_to_the_entry(client, token_for, fake_db):
+    r = _scan(client, token_for, fake_db, {"arrival_type": "vehicle",
+              "vehicle": {"plate": "abc  123", "model": "Toyota Hilux", "color": "White"}})
+    assert r.status_code == 201
+    d = r.json["data"]
+    assert d["arrival_type"] == "vehicle" and d["vehicle"] == "ABC 123" and d["vehicle_saved"] is True
+    assert fake_db.ran("INSERT INTO vehicles")[-1][1] == (5, "ABC 123", "Toyota Hilux", "White")
+    assert fake_db.ran("INSERT INTO access_logs")[-1][1][4] == 1       # vehicle_id = the new row (fake lastrowid=1)
+    assert any("new_vehicle" in str(p) for _, p in fake_db.ran("INSERT INTO audit_logs"))
+
+
+def test_vehicle_details_alone_imply_vehicle_arrival(client, token_for, fake_db):
+    r = _scan(client, token_for, fake_db, {"vehicle": {"plate": "XYZ 9"}})
+    assert r.status_code == 201 and r.json["data"]["arrival_type"] == "vehicle"
+
+
+def test_typing_a_plate_already_on_file_does_not_duplicate_it(client, token_for, fake_db):
+    r = _scan(client, token_for, fake_db, {"vehicle": {"plate": "acx 1", "color": "Blue"}}, owned=[{"id": 7, "plate": "ACX 1"}])
+    assert r.status_code == 201 and r.json["data"]["vehicle_saved"] is False
+    assert not fake_db.ran("INSERT INTO vehicles") and fake_db.ran("UPDATE vehicles SET model")
+    assert fake_db.ran("INSERT INTO access_logs")[-1][1][4] == 7
+
+
+def test_choosing_a_registered_vehicle_by_id(client, token_for, fake_db):
+    owned = [{"id": 7, "plate": "ACX 1"}, {"id": 8, "plate": "BDE 2"}]
+    r = _scan(client, token_for, fake_db, {"vehicle_id": 8}, owned=owned)
+    assert r.status_code == 201 and r.json["data"]["vehicle"] == "BDE 2"
+    assert fake_db.ran("INSERT INTO access_logs")[-1][1][4] == 8
+
+
+def test_vehicle_id_must_belong_to_the_employee(client, token_for, fake_db):
+    r = _scan(client, token_for, fake_db, {"vehicle_id": 99}, owned=[{"id": 7, "plate": "ACX 1"}])
+    assert r.status_code == 422 and r.json["code"] == "INVALID_VEHICLE"
+
+
+def test_single_registered_vehicle_is_used_automatically(client, token_for, fake_db):
+    r = _scan(client, token_for, fake_db, {"arrival_type": "vehicle"}, owned=[{"id": 7, "plate": "ACX 1"}])
+    assert r.status_code == 201 and fake_db.ran("INSERT INTO access_logs")[-1][1][4] == 7
+
+
+def test_several_vehicles_and_no_choice_records_vehicle_without_guessing(client, token_for, fake_db):
+    r = _scan(client, token_for, fake_db, {"arrival_type": "vehicle"}, owned=[{"id": 7, "plate": "A 1"}, {"id": 8, "plate": "B 2"}])
+    assert r.status_code == 201 and r.json["data"]["vehicle"] is None
+    assert fake_db.ran("INSERT INTO access_logs")[-1][1][4] is None
+
+
+@pytest.mark.parametrize("body", [{"arrival_type": "walk_in", "vehicle": {"plate": "ABC 123"}},
+                                  {"arrival_type": "walk_in", "vehicle_id": 3},
+                                  {"vehicle_id": 3, "vehicle": {"plate": "ABC 123"}},
+                                  {"vehicle": {"plate": "<script>"}}])
+def test_conflicting_or_invalid_vehicle_input_rejected(client, token_for, fake_db, body):
+    assert _scan(client, token_for, fake_db, body).status_code == 422
+
+
+def test_walk_in_never_touches_vehicles_or_parking(client, token_for, fake_db):
+    r = _scan(client, token_for, fake_db, {"arrival_type": "walk_in"}, owned=[{"id": 7, "plate": "ACX 1"}])
+    assert r.status_code == 201 and r.json["data"]["vehicle"] is None
+    assert not fake_db.ran("INSERT INTO vehicles") and fake_db.ran("INSERT INTO access_logs")[-1][1][4] is None

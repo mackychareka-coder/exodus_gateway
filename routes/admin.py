@@ -37,21 +37,27 @@ def _dup(e):
 @bp.get("/employees")
 @roles_required(*GATE_STAFF)
 def list_employees():
-    """Kiosk directory. ?q= matches the employee ID or the name."""
+    """Kiosk directory. ?q= matches the employee ID or the name. Includes each employee's vehicles."""
     q = (request.args.get("q") or "").strip()[:64]
     where, params = "e.is_active=1", []
     if q:
         where += " AND (e.employee_code LIKE %s OR e.full_name LIKE %s)"
         params = [_like(q), _like(q)]
     with db.get_cursor() as cur:
-        cur.execute(f"""SELECT e.employee_code, e.full_name,
-                   EXISTS(SELECT 1 FROM vehicles v WHERE v.employee_id = e.id) AS has_vehicle,
-                   (SELECT GROUP_CONCAT(v.plate ORDER BY v.id SEPARATOR ', ') FROM vehicles v
-                      WHERE v.employee_id = e.id) AS plates
-                   FROM employees e WHERE {where} ORDER BY e.full_name LIMIT 500""", tuple(params))
+        cur.execute(f"SELECT e.employee_code, e.full_name FROM employees e WHERE {where} "
+                    "ORDER BY e.full_name LIMIT 500", tuple(params))
         rows = cur.fetchall()
+        by_code = {r["employee_code"]: [] for r in rows}
+        if by_code:
+            cur.execute("SELECT v.id, e.employee_code, v.plate, v.model, v.color FROM vehicles v "
+                        "JOIN employees e ON e.id = v.employee_id WHERE e.employee_code IN (%s) ORDER BY v.id"
+                        % ",".join(["%s"] * len(by_code)), tuple(by_code))
+            for v in cur.fetchall():
+                by_code[v["employee_code"]].append({k: v[k] for k in ("id", "plate", "model", "color")})
     for r in rows:
-        r["has_vehicle"] = bool(r["has_vehicle"])
+        r["vehicles"] = by_code[r["employee_code"]]
+        r["has_vehicle"] = bool(r["vehicles"])
+        r["plates"] = ", ".join(v["plate"] for v in r["vehicles"])
     return ok({"employees": rows})
 
 
@@ -223,12 +229,14 @@ def dashboard():
         # Plates come from a correlated subquery, so multiple vehicles can no longer duplicate log rows.
         cur.execute("""
             SELECT a.id, e.employee_code, e.full_name,
-                   (SELECT GROUP_CONCAT(v.plate ORDER BY v.id SEPARATOR ', ')
-                      FROM vehicles v WHERE v.employee_id = e.id) AS plates,
+                   CASE WHEN a.arrival_type = 'vehicle' THEN COALESCE(vv.plate,
+                        (SELECT GROUP_CONCAT(v.plate ORDER BY v.id SEPARATOR ', ')
+                           FROM vehicles v WHERE v.employee_id = e.id)) END AS plates,
                    a.check_in_time, a.check_out_time, a.method, a.check_out_method, a.arrival_type, t.gate_location
             FROM access_logs a
             JOIN employees e ON e.id = a.employee_id
             LEFT JOIN terminals t ON t.id = a.terminal_id
+            LEFT JOIN vehicles vv ON vv.id = a.vehicle_id
             WHERE a.check_in_time >= CURDATE() OR a.check_out_time >= CURDATE() OR a.check_out_time IS NULL
             ORDER BY a.id DESC LIMIT 500""")
         logs = cur.fetchall()
@@ -246,7 +254,8 @@ def dashboard():
         cur.execute("""
             SELECT e.full_name, v.plate, v.model, v.color,
                    EXISTS(SELECT 1 FROM access_logs a WHERE a.employee_id = e.id
-                          AND a.check_out_time IS NULL AND a.arrival_type = 'vehicle') AS parked
+                          AND a.check_out_time IS NULL AND a.arrival_type = 'vehicle'
+                          AND (a.vehicle_id = v.id OR a.vehicle_id IS NULL)) AS parked
             FROM vehicles v JOIN employees e ON e.id = v.employee_id ORDER BY e.full_name""")
         vehicles = cur.fetchall()
     return ok({"counts": {"staff_on_site": staff_on_site, "visitors_on_site": visitors_on_site},
@@ -429,13 +438,14 @@ def activate_user(uid):
 _ACCESS_SQL = """
     SELECT a.id, e.employee_code, e.full_name, a.check_in_time, a.check_out_time,
            TIMESTAMPDIFF(MINUTE, a.check_in_time, a.check_out_time) AS duration_minutes,
-           a.method AS check_in_method, a.check_out_method, a.arrival_type,
+           a.method AS check_in_method, a.check_out_method, a.arrival_type, vv.plate AS vehicle_plate,
            ti.gate_location AS gate_in, tc.gate_location AS gate_out, u.username AS recorded_by
     FROM access_logs a
     JOIN employees e ON e.id = a.employee_id
     LEFT JOIN terminals ti ON ti.id = a.terminal_id
     LEFT JOIN terminals tc ON tc.id = a.check_out_terminal_id
     LEFT JOIN users u ON u.id = a.recorded_by_user_id
+    LEFT JOIN vehicles vv ON vv.id = a.vehicle_id
     WHERE a.check_in_time >= %s AND a.check_in_time < %s
     ORDER BY a.check_in_time, a.id LIMIT %s"""
 
