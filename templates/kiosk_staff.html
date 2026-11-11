@@ -6,10 +6,18 @@
       <h2 class="text-lg font-bold uppercase text-amber-600 tracking-wide">Staff Directory Gate</h2><a href="/scanner" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-xl font-bold">← Back Menu</a>
     </div>
     <div class="space-y-4">
-      <div><label class="block text-[11px] font-bold uppercase text-gray-400 mb-1">Search Name</label>
-        <input type="text" id="emp-search" placeholder="Tap to type name..." class="w-full p-4 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-amber-500 bg-gray-50/50"></div>
+      <div><label class="block text-[11px] font-bold uppercase text-gray-400 mb-1">Search by Employee ID or Name</label>
+        <input type="text" id="emp-search" placeholder="e.g. EXODUS-12 or Jane" class="w-full p-4 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-amber-500 bg-gray-50/50"></div>
       <div><label class="block text-[11px] font-bold uppercase text-gray-400 mb-1">Select Profile</label>
         <select id="emp-select" class="w-full p-4 border-2 border-gray-200 rounded-xl text-sm text-gray-900 bg-white h-14 focus:outline-none focus:border-amber-500"></select></div>
+      <div>
+        <label class="block text-[11px] font-bold uppercase text-gray-400 mb-1">Arrived By (for Check In)</label>
+        <div class="grid grid-cols-2 gap-3">
+          <label class="flex items-center gap-2 p-3 border-2 border-gray-200 rounded-xl text-sm"><input type="radio" name="arrival" value="walk_in" checked> On foot</label>
+          <label class="flex items-center gap-2 p-3 border-2 border-gray-200 rounded-xl text-sm"><input type="radio" name="arrival" value="vehicle"> By vehicle</label>
+        </div>
+        <p id="vehicle-hint" class="text-[11px] text-gray-500 mt-1"></p>
+      </div>
       <div class="grid grid-cols-2 gap-3">
         <button id="btn-in" class="h-14 bg-green-600 text-white font-bold text-sm rounded-xl shadow-lg">Check In</button>
         <button id="btn-out" class="h-14 bg-amber-600 text-white font-bold text-sm rounded-xl shadow-lg">Check Out</button>

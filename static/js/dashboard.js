@@ -30,7 +30,7 @@
         td("py-3", E("span", "text-white font-medium text-sm block", l.full_name),
            E("span", "text-amber-400 font-mono text-xs", l.plates || "N/A")),
         td("py-3", E("span", "text-[10px] text-gray-400 font-mono block", "In " + hm(l.check_in_time) + (open ? "" : " / Out " + hm(l.check_out_time))),
-           E("span", "text-[10px] text-gray-500", l.method + (l.gate_location ? " @ " + l.gate_location : ""))),
+           E("span", "text-[10px] text-gray-500", l.method + (l.gate_location ? " @ " + l.gate_location : "") + " · " + (l.arrival_type === "vehicle" ? "by vehicle" : "on foot"))),
         td("py-3 text-right", badge(open ? "On site" : (l.check_out_method === "AUTO" ? "Auto-closed" : "Left"), open ? "bg-green-500/10 text-green-400" : "bg-amber-500/10 text-amber-400")));
     });
 

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>EXODUS & CO | Manage Employees</title><script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script></head>
+<body class="bg-gray-900 text-slate-100 font-sans min-h-screen p-4 md:p-6 space-y-6" data-page-roles="SUPER_ADMIN">
+  <div class="max-w-6xl mx-auto flex items-center justify-between border-b border-amber-600/30 pb-4">
+    <div><h1 class="text-2xl font-serif text-amber-500 font-bold">Manage Employees</h1><p class="text-xs uppercase tracking-widest text-gray-400">Search, add, edit and remove employee records</p></div>
+    <div class="flex gap-3 text-sm">
+      <a href="/admin/users" class="bg-gray-800 border border-gray-700 px-5 py-3 rounded-xl font-bold">Users</a>
+      <a href="/dashboard" class="bg-gray-800 border border-gray-700 px-5 py-3 rounded-xl font-bold">Dashboard</a>
+      <button data-logout class="bg-gray-800 border border-gray-700 px-5 py-3 rounded-xl font-bold">Secure Logout</button>
+    </div>
+  </div>
+  <div id="msg" class="hidden max-w-6xl mx-auto"></div>
+
+  <div class="max-w-6xl mx-auto bg-gray-800 p-5 rounded-xl border border-gray-700/60 space-y-3">
+    <h2 class="font-bold text-cyan-400">Add employee</h2>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <input id="ne-code" maxlength="32" placeholder="Employee ID (e.g. EXODUS-99)" class="p-3 bg-gray-900 border border-gray-700 rounded-xl text-sm">
+      <input id="ne-name" maxlength="100" placeholder="Full name" class="p-3 bg-gray-900 border border-gray-700 rounded-xl text-sm">
+      <input id="ne-phone" maxlength="24" placeholder="Phone (optional)" class="p-3 bg-gray-900 border border-gray-700 rounded-xl text-sm">
+      <input id="ne-email" maxlength="254" placeholder="Email for visitor alerts (optional)" class="p-3 bg-gray-900 border border-gray-700 rounded-xl text-sm">
+      <input id="ne-plate" maxlength="16" placeholder="Vehicle plate (optional)" class="p-3 bg-gray-900 border border-gray-700 rounded-xl text-sm">
+      <button id="ne-submit" class="bg-amber-600 text-white font-bold text-sm px-6 py-3 rounded-xl">Add employee</button>
+    </div>
+  </div>
+
+  <div id="edit-panel" class="hidden max-w-6xl mx-auto bg-gray-800 p-5 rounded-xl border border-amber-600/40 space-y-3">
+    <div class="flex items-center justify-between"><h2 class="font-bold text-amber-400">Edit <span id="ed-title"></span></h2><button id="ed-close" class="text-xs text-gray-400 underline">Close</button></div>
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+      <div><label class="block text-[10px] uppercase text-gray-400 mb-1" for="ed-code">Employee ID</label><input id="ed-code" maxlength="32" class="w-full p-3 bg-gray-900 border border-gray-700 rounded-xl text-sm"></div>
+      <div><label class="block text-[10px] uppercase text-gray-400 mb-1" for="ed-name">Full name</label><input id="ed-name" maxlength="100" class="w-full p-3 bg-gray-900 border border-gray-700 rounded-xl text-sm"></div>
+      <div><label class="block text-[10px] uppercase text-gray-400 mb-1" for="ed-phone">Phone</label><input id="ed-phone" maxlength="24" class="w-full p-3 bg-gray-900 border border-gray-700 rounded-xl text-sm"></div>
+      <div><label class="block text-[10px] uppercase text-gray-400 mb-1" for="ed-email">Email</label><input id="ed-email" maxlength="254" class="w-full p-3 bg-gray-900 border border-gray-700 rounded-xl text-sm"></div>
+    </div>
+    <p class="text-[11px] text-gray-400">Changing the Employee ID also changes what their QR/badge must contain; reissue it if you use printed badges.</p>
+    <button id="ed-save" class="bg-cyan-700 text-white font-bold text-sm px-5 py-2.5 rounded-xl">Save changes</button>
+    <div class="border-t border-gray-700 pt-3">
+      <h3 class="text-sm font-bold text-slate-200 mb-2">Vehicles</h3>
+      <div id="ed-vehicles" class="space-y-2 mb-3"></div>
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <input id="ev-plate" maxlength="16" placeholder="Plate" class="p-2.5 bg-gray-900 border border-gray-700 rounded-xl text-sm">
+        <input id="ev-model" maxlength="50" placeholder="Model (optional)" class="p-2.5 bg-gray-900 border border-gray-700 rounded-xl text-sm">
+        <input id="ev-color" maxlength="30" placeholder="Colour (optional)" class="p-2.5 bg-gray-900 border border-gray-700 rounded-xl text-sm">
+        <button id="ev-add" class="bg-gray-700 text-white font-bold text-sm px-4 py-2.5 rounded-xl">Add vehicle</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="max-w-6xl mx-auto bg-gray-800 p-5 rounded-xl border border-gray-700/60">
+    <div class="flex flex-col md:flex-row gap-3 md:items-center justify-between border-b border-gray-700 pb-3 mb-3">
+      <h2 class="font-bold text-slate-200">Employees</h2>
+      <div class="flex gap-3">
+        <input id="q" placeholder="Search by Employee ID or name" class="p-2.5 bg-gray-900 border border-gray-700 rounded-xl text-sm w-64">
+        <select id="status" class="p-2.5 bg-gray-900 border border-gray-700 rounded-xl text-sm"><option value="all">All</option><option value="active">Active</option><option value="inactive">Inactive</option></select>
+      </div>
+    </div>
+    <div class="overflow-x-auto"><table class="w-full text-left text-sm">
+      <thead><tr class="text-gray-400 uppercase text-[10px]"><th class="py-2">ID</th><th>Name</th><th>Phone</th><th>Email</th><th>Vehicles</th><th>Status</th><th class="text-right">Actions</th></tr></thead>
+      <tbody id="emp-rows" class="divide-y divide-gray-700/40"></tbody></table></div>
+  </div>
+  <script src="/static/js/api.js" defer></script><script src="/static/js/admin_employees.js" defer></script>
+</body></html>

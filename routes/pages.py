@@ -54,3 +54,8 @@ def admin_users():
 @bp.get("/admin/exports")
 def admin_exports():
     return render_template("admin_export.html")
+
+
+@bp.get("/admin/employees")
+def admin_employees():
+    return render_template("admin_employees.html")

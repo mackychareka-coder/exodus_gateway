@@ -200,3 +200,27 @@ class EmployeeUpdate(Strict):
         if self.email is None and self.phone is None:
             raise ValueError("provide email and/or phone")
         return self
+
+
+class AdminEmployeeUpdate(Strict):
+    """SUPER_ADMIN edit. Only fields actually sent are changed; phone/email may be null to clear them."""
+    employee_code: Optional[EmployeeCode] = None
+    full_name: Optional[FullName] = None
+    phone: Optional[Phone] = None
+    email: Optional[Email] = None
+    is_active: Optional[bool] = None
+
+    @model_validator(mode="after")
+    def _check(self):
+        sent = self.model_fields_set
+        if not sent:
+            raise ValueError("nothing to update")
+        for f in ("employee_code", "full_name", "is_active"):
+            if f in sent and getattr(self, f) is None:
+                raise ValueError(f"{f} cannot be null")
+        return self
+
+
+class EmployeeDelete(Strict):
+    purge: bool = False
+    confirm_code: Optional[EmployeeCode] = None

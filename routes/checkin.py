@@ -22,13 +22,13 @@ def _method(body):
     return "MANUAL"
 
 
-def _lock_employee(cur, code):
+def _lock_employee(cur, code, allow_inactive=False):
     # Row lock on the employee serialises concurrent scans for the same person.
     cur.execute("SELECT id, full_name, is_active FROM employees WHERE employee_code=%s FOR UPDATE", (code,))
     emp = cur.fetchone()
     if not emp:
         raise ApiError(404, "EMPLOYEE_NOT_FOUND", "Employee ID not recognized.")
-    if not emp["is_active"]:
+    if not emp["is_active"] and not allow_inactive:  # a deactivated employee on site must still be able to leave
         raise ApiError(403, "EMPLOYEE_INACTIVE", "Employee account is inactive.")
     return emp
 
@@ -74,7 +74,7 @@ def _check_in(body, method):
 
 def _check_out(body, method):
     with db.get_cursor() as cur:
-        emp = _lock_employee(cur, body.employee_code)
+        emp = _lock_employee(cur, body.employee_code, allow_inactive=True)
         last = _last_log(cur, emp["id"])
         if not last or last["check_out_time"] is not None:
             raise ApiError(409, "NOT_CHECKED_IN", "No open check-in found for this employee.")

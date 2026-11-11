@@ -97,6 +97,9 @@ All under `/api/v1`. Success: `{"status":"success","message":...,"data":...}`. E
 | PATCH `/employees/<code>` | guard | set an employee's `email` / `phone` (needed for arrival emails) |
 | GET `/admin/export/access-logs.csv`, `/admin/export/visits.csv` | SUPER_ADMIN | `?period=day\|week\|month&date=YYYY-MM-DD` (week = Mon-Sun) or `?start=&end=` (inclusive, max 366 days) |
 | POST `/admin/users/<id>/role`, `/reset-password`, `/activate`, `/deactivate` | SUPER_ADMIN | cannot target yourself for role/deactivate |
+| GET `/employees?q=` | guard, operator | kiosk directory; `q` matches Employee ID or name; includes `has_vehicle`, `plates` |
+| GET `/admin/employees?q=&status=`, GET/PATCH/DELETE `/admin/employees/<code>` | SUPER_ADMIN | search, edit (incl. changing the ID, clearing phone/email, activate/deactivate), delete |
+| POST `/admin/employees/<code>/vehicles`, DELETE `/admin/vehicles/<id>` | SUPER_ADMIN | manage an employee's vehicles |
 | GET `/health` | public | |
 
 Visit status: `pre-registered` -> (approve) `approved` -> (check-in) `on-site` -> (check-out) `departed`; or `denied`.
@@ -170,3 +173,18 @@ in (walk-in, or a pre-registered badge scan) the host gets an email with the vis
 set it when adding the employee or via "Update Employee Email" on the Add Employee page. Emails are sent in a
 background thread; successes and failures are audited (`notify.sent` / `notify.failed`, e.g. "host has no email
 address on file"). Check your setup with `flask --app "app:create_app()" send-test-email you@example.com`.
+
+## Employee records, search, and arrival mode
+
+SUPER_ADMIN manages employees at `/admin/employees`: search by Employee ID or name, add, edit (name, phone, email,
+even the ID), manage vehicles, deactivate/activate, and delete.
+
+* **Deactivate** blocks check-in and hides the person from kiosk lists but keeps all history. A deactivated
+  employee who is still on site can still be checked out.
+* **Delete** is refused if the employee has access history (`HAS_HISTORY`). SUPER_ADMIN can still delete permanently
+  together with that history by repeating the Employee ID (`purge` + `confirm_code`); this is audited with the number
+  of records removed. Visits they hosted are kept (host becomes empty); linked user accounts stay but lose the link.
+* **On foot vs vehicle.** Each check-in records `arrival_type` (`walk_in` or `vehicle`). The staff kiosk has an
+  "Arrived by" switch, pre-set to "By vehicle" only when the employee has a registered car. Parking status is derived
+  from the open session: an employee who walks in never marks their car as parked, so it stays "Away". API/hardware
+  callers should send `arrival_type`; if omitted it is inferred (vehicle when the employee has one).

@@ -14,10 +14,19 @@ import db
 from auth import generate_api_key, hash_api_key, hash_password, roles_required
 from errors import ApiError, ok
 from extensions import limiter
-from schemas import EmployeeCreate, EmployeeCode, EmployeeUpdate, PasswordReset, RoleChange, TerminalCreate, UserCreate, parse_json
+from schemas import (AdminEmployeeUpdate, EmployeeDelete, VehicleIn, EmployeeCreate, EmployeeCode, EmployeeUpdate,
+                     PasswordReset, RoleChange, TerminalCreate, UserCreate, parse_json)
 
 bp = Blueprint("admin", __name__, url_prefix="/api/v1")
 GATE_STAFF = ("SECURITY_GUARD", "GATE_OPERATOR")
+
+
+def _like(q):
+    return "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+
+def _code(code):
+    return TypeAdapter(EmployeeCode).validate_python(code)
 
 
 def _dup(e):
@@ -28,9 +37,22 @@ def _dup(e):
 @bp.get("/employees")
 @roles_required(*GATE_STAFF)
 def list_employees():
+    """Kiosk directory. ?q= matches the employee ID or the name."""
+    q = (request.args.get("q") or "").strip()[:64]
+    where, params = "e.is_active=1", []
+    if q:
+        where += " AND (e.employee_code LIKE %s OR e.full_name LIKE %s)"
+        params = [_like(q), _like(q)]
     with db.get_cursor() as cur:
-        cur.execute("SELECT employee_code, full_name FROM employees WHERE is_active=1 ORDER BY full_name")
-        return ok({"employees": cur.fetchall()})
+        cur.execute(f"""SELECT e.employee_code, e.full_name,
+                   EXISTS(SELECT 1 FROM vehicles v WHERE v.employee_id = e.id) AS has_vehicle,
+                   (SELECT GROUP_CONCAT(v.plate ORDER BY v.id SEPARATOR ', ') FROM vehicles v
+                      WHERE v.employee_id = e.id) AS plates
+                   FROM employees e WHERE {where} ORDER BY e.full_name LIMIT 500""", tuple(params))
+        rows = cur.fetchall()
+    for r in rows:
+        r["has_vehicle"] = bool(r["has_vehicle"])
+    return ok({"employees": rows})
 
 
 @bp.post("/employees")
@@ -67,6 +89,130 @@ def update_employee(code):
     audit.log_event("admin.employee_update", target_type="employee", target_id=code,
                     detail={"email_set": b.email is not None, "phone_set": b.phone is not None})
     return ok(message="Employee updated.")
+
+
+# ---- employee records (SUPER_ADMIN) ---------------------------------------------------------
+_EMP_COLS = """e.id, e.employee_code, e.full_name, e.phone, e.email, e.is_active, e.created_at,
+       (SELECT GROUP_CONCAT(v.plate ORDER BY v.id SEPARATOR ', ') FROM vehicles v WHERE v.employee_id = e.id) AS plates,
+       (SELECT COUNT(*) FROM vehicles v WHERE v.employee_id = e.id) AS vehicle_count,
+       EXISTS(SELECT 1 FROM access_logs a WHERE a.employee_id = e.id AND a.check_out_time IS NULL) AS on_site"""
+
+
+@bp.get("/admin/employees")
+@roles_required()
+def admin_list_employees():
+    """?q= matches employee ID or name; ?status=active|inactive|all (default all)."""
+    q = (request.args.get("q") or "").strip()[:64]
+    status = request.args.get("status", "all")
+    where, params = ["1=1"], []
+    if status == "active":
+        where.append("e.is_active = 1")
+    elif status == "inactive":
+        where.append("e.is_active = 0")
+    if q:
+        where.append("(e.employee_code LIKE %s OR e.full_name LIKE %s)")
+        params += [_like(q), _like(q)]
+    with db.get_cursor() as cur:
+        cur.execute(f"SELECT {_EMP_COLS} FROM employees e WHERE {' AND '.join(where)} "
+                    "ORDER BY e.full_name LIMIT 500", tuple(params))
+        rows = cur.fetchall()
+    return ok({"employees": rows})
+
+
+@bp.get("/admin/employees/<code>")
+@roles_required()
+def admin_get_employee(code):
+    code = _code(code)
+    with db.get_cursor() as cur:
+        cur.execute(f"SELECT {_EMP_COLS} FROM employees e WHERE e.employee_code=%s", (code,))
+        emp = cur.fetchone()
+        if not emp:
+            raise ApiError(404, "EMPLOYEE_NOT_FOUND", "Employee ID not recognized.")
+        cur.execute("SELECT id, plate, model, color FROM vehicles WHERE employee_id=%s ORDER BY id", (emp["id"],))
+        vehicles = cur.fetchall()
+    return ok({"employee": emp, "vehicles": vehicles})
+
+
+@bp.patch("/admin/employees/<code>")
+@roles_required()
+def admin_update_employee(code):
+    code = _code(code)
+    b = parse_json(AdminEmployeeUpdate)
+    fields = [f for f in ("employee_code", "full_name", "phone", "email", "is_active") if f in b.model_fields_set]
+    try:
+        with db.get_cursor() as cur:
+            cur.execute("SELECT id FROM employees WHERE employee_code=%s FOR UPDATE", (code,))
+            if not cur.fetchone():
+                raise ApiError(404, "EMPLOYEE_NOT_FOUND", "Employee ID not recognized.")
+            cur.execute(f"UPDATE employees SET {', '.join(f + '=%s' for f in fields)} WHERE employee_code=%s",
+                        tuple(getattr(b, f) for f in fields) + (code,))
+    except pymysql.err.IntegrityError as e:
+        if _dup(e):
+            raise ApiError(409, "EMPLOYEE_EXISTS", "Another employee already uses that ID.")
+        raise
+    detail = {"fields": fields}
+    if "employee_code" in fields and b.employee_code != code:
+        detail["old_code"], detail["new_code"] = code, b.employee_code
+    audit.log_event("admin.employee_update", target_type="employee", target_id=b.employee_code or code, detail=detail)
+    return ok({"employee_code": b.employee_code or code}, "Employee updated.")
+
+
+@bp.delete("/admin/employees/<code>")
+@roles_required()
+def admin_delete_employee(code):
+    """Refuses if the employee has access history, unless purge=true and confirm_code repeats the ID.
+    (Deactivating via PATCH is_active=false is the safe way to remove someone and keep their history.)"""
+    code = _code(code)
+    b = EmployeeDelete.model_validate(request.get_json(silent=True) or {})
+    purged = 0
+    with db.get_cursor() as cur:
+        cur.execute("SELECT id FROM employees WHERE employee_code=%s FOR UPDATE", (code,))
+        emp = cur.fetchone()
+        if not emp:
+            raise ApiError(404, "EMPLOYEE_NOT_FOUND", "Employee ID not recognized.")
+        cur.execute("SELECT COUNT(*) AS n FROM access_logs WHERE employee_id=%s", (emp["id"],))
+        history = int(cur.fetchone()["n"] or 0)
+        if history:
+            if not b.purge:
+                raise ApiError(409, "HAS_HISTORY", f"This employee has {history} access record(s). Deactivate them "
+                               "instead, or delete permanently together with that history.", {"records": history})
+            if b.confirm_code != code:
+                raise ApiError(422, "CONFIRM_REQUIRED", "Repeat the employee ID in confirm_code to delete the history.")
+            cur.execute("DELETE FROM access_logs WHERE employee_id=%s", (emp["id"],))
+            purged = history
+        cur.execute("DELETE FROM employees WHERE id=%s", (emp["id"],))  # vehicles cascade; hosted visits keep their rows
+    audit.log_event("admin.employee_delete", target_type="employee", target_id=code, detail={"purged_access_records": purged})
+    return ok(message="Employee deleted.")
+
+
+@bp.post("/admin/employees/<code>/vehicles")
+@roles_required()
+def admin_add_vehicle(code):
+    code = _code(code)
+    v = parse_json(VehicleIn)
+    with db.get_cursor() as cur:
+        cur.execute("SELECT id FROM employees WHERE employee_code=%s", (code,))
+        emp = cur.fetchone()
+        if not emp:
+            raise ApiError(404, "EMPLOYEE_NOT_FOUND", "Employee ID not recognized.")
+        cur.execute("INSERT INTO vehicles (employee_id, plate, model, color) VALUES (%s,%s,%s,%s)",
+                    (emp["id"], v.plate, v.model, v.color))
+        vid = cur.lastrowid
+    audit.log_event("admin.vehicle_add", target_type="employee", target_id=code, detail={"plate": v.plate})
+    return ok({"id": vid}, "Vehicle added.", 201)
+
+
+@bp.delete("/admin/vehicles/<int:vid>")
+@roles_required()
+def admin_delete_vehicle(vid):
+    with db.get_cursor() as cur:
+        cur.execute("SELECT plate FROM vehicles WHERE id=%s", (vid,))
+        row = cur.fetchone()
+        if not row:
+            raise ApiError(404, "VEHICLE_NOT_FOUND", "Vehicle not found.")
+        cur.execute("DELETE FROM vehicles WHERE id=%s", (vid,))
+    audit.log_event("admin.vehicle_delete", target_type="vehicle", target_id=vid, detail={"plate": row["plate"]})
+    return ok(message="Vehicle removed.")
 
 
 # ---- dashboard ------------------------------------------------------------------------------

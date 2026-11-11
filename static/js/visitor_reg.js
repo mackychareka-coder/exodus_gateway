@@ -8,7 +8,7 @@
     const res = await X.api("/api/v1/employees");
     (res.body.data ? res.body.data.employees : []).forEach((e) => {
       const o = document.createElement("option");
-      o.value = e.employee_code; o.textContent = e.full_name;
+      o.value = e.employee_code; o.textContent = X.decode(e.full_name) + " (" + e.employee_code + ")";
       $("vis-host").appendChild(o);
     });
     $("vis-submit").addEventListener("click", async () => {

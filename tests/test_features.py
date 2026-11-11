@@ -154,3 +154,111 @@ def test_update_employee_email_guard_only(client, token_for, fake_db):
     assert denied.status_code == 403
     bad = client.patch("/api/v1/employees/EXODUS-5", json={"email": "not-an-email"}, headers=bearer(token_for("SECURITY_GUARD")))
     assert bad.status_code == 422
+
+
+# ---- employee management, search, arrival mode ---------------------------------------------
+EMP = {"id": 5, "full_name": "Jane Doe", "is_active": 1}
+
+
+def test_employee_admin_endpoints_are_super_admin_only(client, token_for):
+    for role in ("SECURITY_GUARD", "GATE_OPERATOR", "EMPLOYEE"):
+        h = bearer(token_for(role))
+        assert client.get("/api/v1/admin/employees", headers=h).status_code == 403
+        assert client.patch("/api/v1/admin/employees/EXODUS-5", json={"full_name": "X Y"}, headers=h).status_code == 403
+        assert client.delete("/api/v1/admin/employees/EXODUS-5", headers=h).status_code == 403
+        assert client.post("/api/v1/admin/employees/EXODUS-5/vehicles", json={"plate": "ABC 123"}, headers=h).status_code == 403
+        assert client.delete("/api/v1/admin/vehicles/1", headers=h).status_code == 403
+
+
+def test_search_by_employee_id_or_name(client, token_for, fake_db):
+    fake_db.on("FROM employees e WHERE", [{"employee_code": "EXODUS-5", "full_name": "Jane Doe", "has_vehicle": 1, "plates": "ACX 1"}])
+    r = client.get("/api/v1/employees?q=exodus-5", headers=bearer(token_for("GATE_OPERATOR")))
+    assert r.status_code == 200 and r.json["data"]["employees"][0]["has_vehicle"] is True
+    sql, params = fake_db.ran("FROM employees e WHERE")[-1]
+    assert "e.employee_code LIKE" in sql and "e.full_name LIKE" in sql and params == ("%exodus-5%", "%exodus-5%")
+
+
+def test_admin_search_escapes_wildcards(client, token_for, fake_db):
+    fake_db.on("FROM employees e WHERE", [])
+    client.get("/api/v1/admin/employees?q=100%25_x&status=active", headers=bearer(token_for("SUPER_ADMIN")))
+    sql, params = fake_db.ran("FROM employees e WHERE")[-1]
+    assert "e.is_active = 1" in sql and params[0] == "%100\\%\\_x%"
+
+
+def test_walk_in_arrival_is_recorded_even_when_employee_has_a_car(client, token_for, fake_db):
+    fake_db.on("FROM employees WHERE employee_code", [EMP])
+    fake_db.on("FROM access_logs WHERE employee_id", [])
+    fake_db.on("FROM vehicles WHERE employee_id", [{"hit": 1}])   # has a registered car
+    r = client.post("/api/v1/access/employee/check-in", headers=bearer(token_for("GATE_OPERATOR")),
+                    json={"employee_code": "EXODUS-5", "arrival_type": "walk_in"})
+    assert r.status_code == 201 and r.json["data"]["arrival_type"] == "walk_in"
+    assert fake_db.ran("INSERT INTO access_logs")[-1][1][3] == "walk_in"
+
+
+def test_unspecified_arrival_still_infers_vehicle(client, token_for, fake_db):
+    fake_db.on("FROM employees WHERE employee_code", [EMP])
+    fake_db.on("FROM access_logs WHERE employee_id", [])
+    fake_db.on("FROM vehicles WHERE employee_id", [{"hit": 1}])
+    r = client.post("/api/v1/access/employee/check-in", headers=bearer(token_for("GATE_OPERATOR")),
+                    json={"employee_code": "EXODUS-5"})
+    assert r.json["data"]["arrival_type"] == "vehicle"
+
+
+def test_inactive_employee_cannot_check_in_but_can_check_out(client, token_for, fake_db):
+    h = bearer(token_for("GATE_OPERATOR"))
+    fake_db.on("FROM employees WHERE employee_code", [{**EMP, "is_active": 0}])
+    fake_db.on("FROM access_logs WHERE employee_id", [{"id": 9, "check_out_time": None, "age": 600}])
+    assert client.post("/api/v1/access/employee/check-in", headers=h, json={"employee_code": "EXODUS-5"}).json["code"] == "EMPLOYEE_INACTIVE"
+    assert client.post("/api/v1/access/employee/check-out", headers=h, json={"employee_code": "EXODUS-5"}).status_code == 200
+
+
+def test_delete_refuses_when_history_exists(client, token_for, fake_db):
+    fake_db.on("FROM employees WHERE employee_code", [{"id": 5}])
+    fake_db.on("COUNT(*) AS n FROM access_logs", [{"n": 12}])
+    r = client.delete("/api/v1/admin/employees/EXODUS-5", headers=bearer(token_for("SUPER_ADMIN")))
+    assert r.status_code == 409 and r.json["code"] == "HAS_HISTORY"
+    assert not fake_db.ran("DELETE FROM employees")
+
+
+def test_purge_requires_matching_confirmation(client, token_for, fake_db):
+    h = bearer(token_for("SUPER_ADMIN"))
+    fake_db.on("FROM employees WHERE employee_code", [{"id": 5}])
+    fake_db.on("COUNT(*) AS n FROM access_logs", [{"n": 12}])
+    bad = client.delete("/api/v1/admin/employees/EXODUS-5", headers=h, json={"purge": True, "confirm_code": "EXODUS-6"})
+    assert bad.status_code == 422 and bad.json["code"] == "CONFIRM_REQUIRED" and not fake_db.ran("DELETE FROM employees")
+    good = client.delete("/api/v1/admin/employees/EXODUS-5", headers=h, json={"purge": True, "confirm_code": "exodus-5"})
+    assert good.status_code == 200
+    assert fake_db.ran("DELETE FROM access_logs") and fake_db.ran("DELETE FROM employees")
+    assert any("admin.employee_delete" in (p or ()) for _, p in fake_db.ran("INSERT INTO audit_logs"))
+
+
+def test_delete_without_history_just_deletes(client, token_for, fake_db):
+    fake_db.on("FROM employees WHERE employee_code", [{"id": 5}])
+    fake_db.on("COUNT(*) AS n FROM access_logs", [{"n": 0}])
+    assert client.delete("/api/v1/admin/employees/EXODUS-5", headers=bearer(token_for("SUPER_ADMIN"))).status_code == 200
+    assert fake_db.ran("DELETE FROM employees") and not fake_db.ran("DELETE FROM access_logs")
+
+
+def test_admin_edit_changes_only_sent_fields_and_can_clear_email(client, token_for, fake_db):
+    fake_db.on("FROM employees WHERE employee_code", [{"id": 5}])
+    r = client.patch("/api/v1/admin/employees/EXODUS-5", headers=bearer(token_for("SUPER_ADMIN")),
+                     json={"full_name": "Jane Q Doe", "email": None})
+    assert r.status_code == 200
+    sql, params = fake_db.ran("UPDATE employees SET")[-1]
+    assert "full_name=%s" in sql and "email=%s" in sql and "phone" not in sql and "employee_code=%s" in sql.split("WHERE")[1]
+    assert params == ("Jane Q Doe", None, "EXODUS-5")
+
+
+@pytest.mark.parametrize("body", [{}, {"full_name": None}, {"employee_code": "bad code"}, {"is_admin": True}])
+def test_admin_edit_validation(client, token_for, body):
+    r = client.patch("/api/v1/admin/employees/EXODUS-5", headers=bearer(token_for("SUPER_ADMIN")), json=body)
+    assert r.status_code == 422
+
+
+def test_admin_can_add_and_remove_vehicle(client, token_for, fake_db):
+    h = bearer(token_for("SUPER_ADMIN"))
+    fake_db.on("FROM employees WHERE employee_code", [{"id": 5}])
+    assert client.post("/api/v1/admin/employees/EXODUS-5/vehicles", headers=h, json={"plate": "acx 1234"}).status_code == 201
+    assert fake_db.ran("INSERT INTO vehicles")[-1][1][1] == "ACX 1234"
+    fake_db.on("FROM vehicles WHERE id", [{"plate": "ACX 1234"}])
+    assert client.delete("/api/v1/admin/vehicles/3", headers=h).status_code == 200
